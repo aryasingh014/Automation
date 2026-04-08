@@ -19,15 +19,18 @@ import Compliance from './pages/Compliance';
 import Vendors from './pages/Vendors';
 import PackageReview from './pages/PackageReview';
 import Proposals from './pages/Proposals';
+import History from './pages/History';
+import PublicShare from './pages/PublicShare';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
-          {/* Public */}
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/public/share/:shareId" element={<PublicShare />} />
 
           {/* Protected — inside Layout */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
@@ -39,6 +42,7 @@ function App() {
             <Route path="package-review/:grantId" element={<PackageReview />} />
             <Route path="proposal-draft" element={<ProposalDraft />} />
             <Route path="proposals" element={<Proposals />} />
+            <Route path="knowledge-base" element={<ProtectedRoute adminOnly><History /></ProtectedRoute>} />
             <Route path="expenses" element={<Expenses />} />
             <Route path="approvals" element={<ProtectedRoute adminOnly><ApprovalPanel /></ProtectedRoute>} />
             <Route path="reports" element={<Reports />} />

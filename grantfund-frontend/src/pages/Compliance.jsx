@@ -8,11 +8,14 @@ import toast from 'react-hot-toast';
 const Compliance = () => {
   const { grantId } = useParams();
   const [checkpoints, setCheckpoints] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [grant, setGrant] = useState(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
   const [form, setForm] = useState({ title: '', description: '', dueDate: '', status: 'Open' });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (grantId) {
@@ -23,11 +26,13 @@ const Compliance = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [cpRes, gRes] = await Promise.all([
+      const [cpRes, docRes, gRes] = await Promise.all([
         complianceAPI.getCheckpoints(grantId),
+        complianceAPI.getDocuments(grantId),
         grantAPI.getOne(grantId)
       ]);
       setCheckpoints(cpRes.data.data);
+      setDocuments(docRes.data.data);
       setGrant(gRes.data.data);
     } catch (err) {
       toast.error('Failed to load compliance data');
@@ -49,17 +54,24 @@ const Compliance = () => {
     }
   };
 
-  const handleAnalyzeCompliance = async () => {
-    setAnalyzing(true);
-    const toastId = toast.loading('AI is analyzing the grant to find compliance requirements...');
+  const handleFileUpload = async (documentId, file) => {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('documentId', documentId);
+    formData.append('file', file);
+    
+    setUploading(true);
+    const tid = toast.loading('Uploading document...');
     try {
-      const res = await aiAPI.analyzeCompliance({ grantId });
-      toast.success(`Successfully added ${res.data.count} compliance checkpoints!`, { id: toastId });
-      fetchData(); // reload
+      await api.post('/compliance/documents/submit', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Document submitted successfully', { id: tid });
+      fetchData();
     } catch (err) {
-      toast.error('Failed to analyze compliance requirements', { id: toastId });
+      toast.error('Upload failed', { id: tid });
     } finally {
-      setAnalyzing(false);
+      setUploading(false);
     }
   };
 
@@ -100,19 +112,21 @@ const Compliance = () => {
       <div className="bg-white rounded-3xl p-8 border border-surface-200 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <h2 className="text-xl font-black text-gray-900">Compliance Checkpoints</h2>
-          <div className="flex gap-3">
-            <button 
-              onClick={handleAnalyzeCompliance} 
-              disabled={analyzing}
-              className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
-            >
-              <HiOutlineSparkles className={`w-4 h-4 ${analyzing ? 'animate-spin' : ''}`} /> 
-              {analyzing ? 'Analyzing...' : 'Analyze Requirements'}
-            </button>
-            <button onClick={() => setShowAddModal(true)} className="btn-primary text-xs flex items-center gap-2">
-              <HiOutlinePlus className="w-4 h-4" /> Add Checkpoint
-            </button>
-          </div>
+          {user?.role === 'admin' && (
+            <div className="flex gap-3">
+              <button 
+                onClick={handleAnalyzeCompliance} 
+                disabled={analyzing}
+                className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
+              >
+                <HiOutlineSparkles className={`w-4 h-4 ${analyzing ? 'animate-spin' : ''}`} /> 
+                {analyzing ? 'Analyzing...' : 'Analyze Requirements'}
+              </button>
+              <button onClick={() => setShowAddModal(true)} className="btn-primary text-xs flex items-center gap-2">
+                <HiOutlinePlus className="w-4 h-4" /> Add Checkpoint
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -138,11 +152,37 @@ const Compliance = () => {
               </div>
             </div>
           )) : (
-            <div className="text-center py-20 bg-surface-50 rounded-2xl border-2 border-dashed border-surface-200">
-              <HiOutlineExclamationCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-bold">No compliance checkpoints defined</p>
-              <p className="text-xs text-gray-400 mt-1">Start by adding the first checkpoint for this grant.</p>
+            <div className="text-center py-10 bg-surface-50 rounded-2xl border-2 border-dashed border-surface-100">
+               <p className="text-xs text-gray-400 font-bold italic">No active checkpoints found for this grant.</p>
             </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl p-8 border border-surface-200 shadow-sm mt-8">
+        <h2 className="text-xl font-black text-gray-900 mb-8">Document Requests</h2>
+        <div className="space-y-4">
+          {documents.length > 0 ? documents.map(doc => (
+            <div key={doc.id} className="p-6 rounded-2xl border border-surface-200 bg-surface-50 flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-sm text-gray-800">{doc.title}</h4>
+                <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Status: {doc.status}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {doc.status !== 'Approved' ? (
+                  <label className="cursor-pointer">
+                    <input type="file" className="hidden" onChange={(e) => handleFileUpload(doc.id, e.target.files[0])} disabled={uploading} />
+                    <span className="btn-primary text-[10px] py-2 px-4 inline-block">
+                      {uploading ? 'Uploading...' : 'Upload Document'}
+                    </span>
+                  </label>
+                ) : (
+                  <span className="badge-success text-[10px]">Verified Original</span>
+                )}
+              </div>
+            </div>
+          )) : (
+            <p className="text-center py-10 text-gray-400 text-sm italic">No specific document requests for this grant yet.</p>
           )}
         </div>
       </div>

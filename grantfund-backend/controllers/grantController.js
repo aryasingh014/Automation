@@ -145,6 +145,14 @@ const getGrant = async (req, res, next) => {
       });
     }
 
+    // Authorization check for subrecipients
+    if (req.user.role === 'subrecipient') {
+      const isAssigned = await GrantAssignment.findOne({ grantId: grant.id, userId: req.user.id });
+      if (!isAssigned) {
+        return res.status(403).json({ success: false, message: 'Not authorized for this grant' });
+      }
+    }
+
     const creator = await User.findOne({ id: grant.createdBy }).select('id name email');
     
     const assignments = await GrantAssignment.find({ grantId: grant.id });
@@ -299,4 +307,30 @@ const deleteGrant = async (req, res, next) => {
   }
 };
 
-module.exports = { createGrant, getGrants, getGrant, updateGrant, deleteGrant };
+const getPublicGrant = async (req, res, next) => {
+  try {
+    const grant = await Grant.findOne({ id: req.params.id })
+      .select('title agency summary complianceIntelligenceReport publicShareLink');
+
+    if (!grant) {
+      return res.status(404).json({ success: false, message: 'Public package not found' });
+    }
+
+    const documents = await require('../models').VendorDocument.find({ 
+      grantId: grant.id, 
+      status: 'Approved' 
+    }).populate('vendor', 'name');
+
+    res.json({
+      success: true,
+      data: {
+        grant,
+        documents
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { createGrant, getGrants, getGrant, updateGrant, deleteGrant, getPublicGrant };

@@ -83,6 +83,7 @@ app.use('/api/scraper', scraperRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/compliance', complianceRoutes);
+app.use('/api/historical', require('./routes/historicalRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {

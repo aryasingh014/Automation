@@ -4,11 +4,14 @@
 
 const express = require('express');
 const router = express.Router();
-const { createGrant, getGrants, getGrant, updateGrant, deleteGrant } = require('../controllers/grantController');
+const { createGrant, getGrants, getGrant, updateGrant, deleteGrant, getPublicGrant } = require('../controllers/grantController');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadContract } = require('../middleware/upload');
 
-// All routes are protected
+// Public routes
+router.get('/public/:id', getPublicGrant);
+
+// All other routes are protected
 router.use(protect);
 
 router.route('/')

@@ -26,6 +26,18 @@ const vendorSchema = new mongoose.Schema({
   },
   contactPerson: String,
   phone: String,
+  portalUrl: {
+    type: String,
+    trim: true
+  },
+  portalCredentials: {
+    username: String,
+    password: String // In production, this would be encrypted
+  },
+  autoSyncEnabled: {
+    type: Boolean,
+    default: false
+  },
   metadata: mongoose.Schema.Types.Mixed
 }, {
   timestamps: true

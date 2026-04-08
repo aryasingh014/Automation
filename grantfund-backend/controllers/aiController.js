@@ -1,4 +1,4 @@
-const { Grant, Fund, Expense, Proposal, GrantDeadline, ComplianceCheckpoint } = require('../models');
+const { Grant, Fund, Expense, Proposal, GrantDeadline, ComplianceCheckpoint, HistoricalGrant } = require('../models');
 const { prompt: systemPrompt } = require('../prompts/prompt');
 
 /**
@@ -22,7 +22,7 @@ const suggestGrants = async (req, res, next) => {
     let expenseFilter = { grantId: { $in: grantIds } };
     if (req.user.role === 'subrecipient') expenseFilter.submittedBy = req.user.id;
     const recentExpenses = await Expense.find(expenseFilter).populate('grant', 'title').sort({ createdAt: -1 }).limit(5);
-    const historicalProposals = await Proposal.find({ isHistorical: true }).limit(3);
+    const historicalProposals = await HistoricalGrant.find().limit(3);
 
     const context = {
       availableGrants: liveGrants,
@@ -121,7 +121,12 @@ const suggestContextual = async (req, res, next) => {
     const grant = await Grant.findOne({ id: grantId });
     if (!grant) return res.status(404).json({ success: false, message: 'Grant not found' });
 
-    const historicalProposals = await Proposal.find({ grantId, isHistorical: true }).limit(2);
+    const historicalProposals = await HistoricalGrant.find({ 
+      $or: [
+        { keywords: { $in: [section] } },
+        { title: { $regex: grant.title.split(' ')[0], $options: 'i' } }
+      ]
+    }).limit(2);
     const activeFunds = await Fund.find({ grantId });
 
     const context = {
@@ -194,7 +199,18 @@ const generateFullProposal = async (req, res, next) => {
     const grant = await Grant.findOne({ id: grantId });
     if (!grant) return res.status(404).json({ success: false, message: 'Grant not found' });
 
-    const historicalProposals = await Proposal.find({ isHistorical: true }).limit(3);
+    // Authorization check
+    if (req.user.role === 'subrecipient') {
+      const isAssigned = await require('../models').GrantAssignment.findOne({ grantId, userId: req.user.id });
+      if (!isAssigned) return res.status(403).json({ success: false, message: 'Not authorized to generate proposals for this grant' });
+    }
+
+    const historicalProposals = await HistoricalGrant.find({
+      $or: [
+        { grantor: grant.agency },
+        { title: { $regex: grant.title.split(' ')[0], $options: 'i' } }
+      ]
+    }).limit(3);
     const activeFunds = await Fund.find({ grantId });
 
     const context = {
@@ -278,6 +294,12 @@ const analyzeComplianceRequirements = async (req, res, next) => {
 
     const grant = await Grant.findOne({ id: grantId });
     if (!grant) return res.status(404).json({ success: false, message: 'Grant not found' });
+
+    // Authorization check
+    if (req.user.role === 'subrecipient') {
+      const isAssigned = await require('../models').GrantAssignment.findOne({ grantId, userId: req.user.id });
+      if (!isAssigned) return res.status(403).json({ success: false, message: 'Not authorized to analyze compliance for this grant' });
+    }
 
     const systemMsg = `You are a Grant Compliance Expert. Extract a checklist of EXACTLY what documents, milestones, or vendor checkpoints are required based on this grant's eligibility and purpose text.
     Return ONLY a JSON object with a "checkpoints" array. Structure:

@@ -71,6 +71,14 @@ const grantSchema = new mongoose.Schema({
   createdBy: {
     type: String,
     required: true
+  },
+  complianceIntelligenceReport: {
+    type: String,
+    default: null
+  },
+  publicShareLink: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,

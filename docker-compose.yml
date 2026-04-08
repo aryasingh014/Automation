@@ -31,6 +31,7 @@ services:
       - USE_LOCAL_CHATBOT=true
       - GROK_API_KEY=xai-0uqUIr5OrLqbbMM2nr4h8jXuWPjJzlXx2zCs3uePWKORNXkCc3GYVXMB4ozsnXeYJcCkpBx57d23U9eS
       - GROQ_API_KEY=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
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_key_here}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

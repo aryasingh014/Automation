@@ -12,6 +12,7 @@ import {
   HiOutlineReceiptTax,
   HiOutlineClipboardCheck,
   HiOutlineFolderOpen,
+  HiOutlineBookOpen,
   HiOutlineChartBar,
   HiOutlineLogout,
   HiOutlineX,
@@ -31,6 +32,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { label: 'Management', items: [
       { to: '/grants', icon: HiOutlineDocumentText, label: 'Grants' },
       { to: '/proposals', icon: HiOutlineFolderOpen, label: 'Proposals' },
+      { to: '/knowledge-base', icon: HiOutlineBookOpen, label: 'Knowledge Base' },
       { to: '/vendors', icon: HiOutlineUserGroup, label: 'Vendors' },
       { to: '/expenses', icon: HiOutlineReceiptTax, label: 'Expenses' },
       { to: '/approvals', icon: HiOutlineClipboardCheck, label: 'Approvals', badge: true },

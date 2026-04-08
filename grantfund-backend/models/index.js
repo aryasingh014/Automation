@@ -14,6 +14,7 @@ const Proposal = require('./Proposal');
 const Vendor = require('./Vendor');
 const ComplianceCheckpoint = require('./ComplianceCheckpoint');
 const VendorDocument = require('./VendorDocument');
+const HistoricalGrant = require('./HistoricalGrant');
 
 module.exports = {
   User,
@@ -27,5 +28,6 @@ module.exports = {
   Proposal,
   Vendor,
   ComplianceCheckpoint,
-  VendorDocument
+  VendorDocument,
+  HistoricalGrant
 };

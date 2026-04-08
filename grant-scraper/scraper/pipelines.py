@@ -23,6 +23,10 @@ class NLPDatabasePipeline:
 
     def open_spider(self, spider):
         # Connect to MongoDB
+        if not self.db_url:
+            spider.logger.error("DATABASE_URL not found in environment")
+            return
+
         try:
             self.client = pymongo.MongoClient(self.db_url)
             # Extract database name from URL if possible, or fallback

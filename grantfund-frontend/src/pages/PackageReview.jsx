@@ -10,6 +10,8 @@ const PackageReview = () => {
   const [grant, setGrant] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [consolidating, setConsolidating] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     if (grantId) fetchData();
@@ -41,14 +43,36 @@ const PackageReview = () => {
     }
   };
 
+  const handleConsolidate = async () => {
+    try {
+      setConsolidating(true);
+      const res = await api.post(`/compliance/consolidate/${grantId}`);
+      toast.success('Intelligence consolidation complete');
+      fetchData();
+    } catch (err) {
+      toast.error('Consolidation failed');
+    } finally {
+      setConsolidating(false);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      setSharing(true);
+      const res = await api.post(`/compliance/share/${grantId}`);
+      toast.success('Public share link generated');
+      fetchData();
+    } catch (err) {
+      toast.error('Sharing failed');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const handleSubmitPackage = async () => {
     const approvedCount = documents.filter(d => d.status === 'Approved').length;
     if (approvedCount === 0) {
       toast.error('Please approve at least one document before submitting');
-      return;
-    }
-    if (approvedCount < documents.length) {
-      toast.error('Please approve all documents before submitting');
       return;
     }
     toast.success('Package submitted successfully!');
@@ -106,6 +130,16 @@ const PackageReview = () => {
               )}
             </div>
           </div>
+          {grant.complianceIntelligenceReport && (
+            <div className="bg-primary-900 text-white rounded-3xl p-8 border border-primary-800 shadow-lg mt-8">
+              <h2 className="text-xl font-black mb-4 flex items-center gap-2">
+                <span className="text-primary-400">✨</span> AI Strategic Intelligence
+              </h2>
+              <p className="text-sm leading-relaxed text-primary-100 italic">
+                "{grant.complianceIntelligenceReport}"
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -120,14 +154,30 @@ const PackageReview = () => {
                 <span className="text-gray-400">Approved</span>
                 <span className="font-bold">{documents.filter(d => d.status === 'Approved').length}</span>
               </div>
-              <div className="pt-4 border-t border-white/10">
-                <p className="text-[10px] font-bold text-primary-400 uppercase tracking-widest mb-2">Completion</p>
-                <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary-500" 
-                    style={{ width: `${documents.length > 0 ? (documents.filter(d => d.status === 'Approved').length / documents.length) * 100 : 0}%` }} 
-                  />
-                </div>
+              
+              <div className="pt-6 space-y-3">
+                <button 
+                  onClick={handleConsolidate} 
+                  disabled={consolidating || documents.filter(d => d.status === 'Approved').length === 0}
+                  className="w-full py-4 rounded-2xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+                >
+                  {consolidating ? 'Consolidating...' : 'Generate AI Intelligence'}
+                </button>
+                
+                <button 
+                  onClick={handleShare}
+                  disabled={sharing || !grant.complianceIntelligenceReport}
+                  className="w-full py-4 rounded-2xl bg-primary-500 hover:bg-primary-600 text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+                >
+                  {sharing ? 'Sharing...' : 'Generate Share Link'}
+                </button>
+
+                {grant.publicShareLink && (
+                  <div className="p-4 bg-primary-950/50 rounded-2xl border border-primary-800/50 mt-4">
+                    <p className="text-[10px] font-bold text-primary-400 uppercase mb-2">Public Share Link</p>
+                    <input readOnly value={grant.publicShareLink} className="w-full bg-transparent text-[10px] text-gray-300 border-none p-0 focus:ring-0 truncate" />
+                  </div>
+                )}
               </div>
             </div>
           </div>
