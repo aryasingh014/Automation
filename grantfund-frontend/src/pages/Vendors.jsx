@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { complianceAPI, grantAPI } from '../services/api';
+import api, { complianceAPI, grantAPI } from '../services/api';
 import { HiOutlineMail, HiOutlinePhone, HiOutlinePlus, HiOutlineUserCircle, HiOutlineIdentification, HiOutlineDocumentAdd } from 'react-icons/hi';
 import AnimatedWrapper from '../components/AnimatedWrapper';
 import toast from 'react-hot-toast';

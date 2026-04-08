@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { complianceAPI, grantAPI, aiAPI } from '../services/api';
+import { api, complianceAPI, grantAPI, aiAPI } from '../services/api';
 import { HiOutlineBadgeCheck, HiOutlineClock, HiOutlineDocumentSearch, HiOutlineExclamationCircle, HiOutlinePlus, HiOutlineSparkles } from 'react-icons/hi';
 import AnimatedWrapper from '../components/AnimatedWrapper';
 import toast from 'react-hot-toast';
@@ -22,6 +22,20 @@ const Compliance = () => {
       fetchData();
     }
   }, [grantId]);
+
+  const handleAnalyzeCompliance = async () => {
+    try {
+      setAnalyzing(true);
+      const tid = toast.loading('AI is analyzing grant context to identify compliance requirements...');
+      await aiAPI.analyzeCompliance({ grantId });
+      toast.success('Analysis complete! New checkpoints have been added.', { id: tid });
+      fetchData();
+    } catch (err) {
+      toast.error('Compliance analysis failed');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const fetchData = async () => {
     try {

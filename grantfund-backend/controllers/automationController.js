@@ -26,7 +26,7 @@ const triggerVendorSync = async (req, res, next) => {
     await AuditLog.create({
       id: crypto.randomUUID(),
       userId: req.user.id,
-      action: 'VENDOR_AUTO_SYNC',
+      action: 'SYNC_VENDOR',
       entity: 'VendorDocument',
       entityId: doc.id,
       details: `Triggered autonomous collection of ${documentType} from ${vendor.name}`
