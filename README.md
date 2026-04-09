@@ -4,6 +4,8 @@
 
 The GMS Grant Deployment project aims to facilitate and streamline the application and management of grants offered by the Global Management System (GMS). This repository houses all necessary components, tools, and documentation to help stakeholders efficiently utilize and deploy grants, ensuring transparent processes and accessibility to all users.
 
+**Access the application here**: [http://13.235.99.105/login](http://13.235.99.105/login)
+
 ## Project Objectives
 - **Efficient Grant Management**: Automate key processes involved in grant applications, reviews, and allocations.
 - **User Accessibility**: Provide tools and interfaces that are user-friendly and accessible to a wide range of users, including applicants, reviewers, and administrators.
