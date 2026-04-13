@@ -1,0 +1,5 @@
+{
+  "name": "Enterprise IT Observability Dashboard",
+  "description": "A comprehensive observability platform for monitoring enterprise applications, infrastructure, and network telemetry with intelligent alerting and ServiceNow integration.",
+  "requestFramePermissions": []
+}
