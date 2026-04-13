@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: gms_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+    networks:
+      - gms-network
+
+  backend:
+    build:
+      context: ./grantfund-backend
+      dockerfile: Dockerfile
+    container_name: gms_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DATABASE_URL=mongodb://mongodb:27017/grantfund
+      - JWT_SECRET=${JWT_SECRET:-your_jwt_secret_here}
+      - NODE_ENV=development
+      - CLOUDFLARE_ACCOUNT_ID=73146626c5804760b7acc2dedb1495b4
+      - CLOUDFLARE_API_TOKEN=DgRsAII8ISDHeilMwxkPIXug
+      - LOCAL_OLLAMA_URL=http://host.docker.internal:11434
+      - CHATBOT_SERVICE_URL=http://chatbot:5001
+      - USE_LOCAL_CHATBOT=true
+      - GROK_API_KEY=xai-0uqUIr5OrLqbbMM2nr4h8jXuWPjJzlXx2zCs3uePWKORNXkCc3GYVXMB4ozsnXeYJcCkpBx57d23U9eS
+      - GROQ_API_KEY=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
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_key_here}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mongodb
+      - chatbot
+    volumes:
+      - ./grantfund-backend:/app
+      - ./grant-scraper:/grant-scraper
+      - /app/node_modules
+    networks:
+      - gms-network
+
+  frontend:
+    build:
+      context: ./grantfund-frontend
+      dockerfile: Dockerfile
+    container_name: gms_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=/api
+    depends_on:
+      - backend
+    volumes:
+      - ./grantfund-frontend:/app
+      - /app/node_modules
+    networks:
+      - gms-network
+
+  chatbot:
+    build:
+      context: ./grant-chatbot
+      dockerfile: Dockerfile
+    container_name: gms_chatbot
+    ports:
+      - "5001:5001"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - MODEL_NAME=llama3
+      - PORT=5001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - gms-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  gms-network:
+    driver: bridge
