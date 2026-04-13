@@ -66,5 +66,8 @@ This platform serves as a central hub for IT Operations (NOC), Site Reliability 
 - `sonner`: Toast notifications.
 - `clsx` & `tailwind-merge`: CSS class management.
 
+## 👥 Contributors
+- Arya Singh
+
 ---
 *Developed as a high-performance observability prototype.*
