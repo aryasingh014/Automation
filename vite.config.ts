@@ -27,7 +27,7 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api/now': {
-          target: env.SERVICENOW_INSTANCE_URL || '',
+          target: env.SERVICENOW_INSTANCE_URL || 'http://localhost',
           changeOrigin: true,
           secure: false,
           configure: (proxy) => {
@@ -36,19 +36,7 @@ export default defineConfig(({mode}) => {
             });
           }
         },
-        '/ollama': {
-          target: 'http://127.0.0.1:11434',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/ollama/, ''),
-          configure: (proxy) => {
-            proxy.on('error', (err) => {
-              console.error('[Vite Proxy] Ollama proxy error:', err.message);
-            });
-            proxy.on('proxyReq', (_proxyReq, req) => {
-              console.log('[Vite Proxy] Ollama ->', req.url);
-            });
-          }
-        },
+
         '/api': {
           target: 'http://127.0.0.1:5000',
           changeOrigin: true,

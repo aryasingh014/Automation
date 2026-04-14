@@ -99,7 +99,7 @@ async function callOllama(prompt: string, settings: AiSettings) {
     headers['Authorization'] = `Bearer ${settings.apiKey}`;
   }
 
-  const url = `/ollama/api/generate`;
+  const url = `/api/ollama/generate`;
   console.log(`[AI] Calling Ollama: ${url}`);
 
   let response: Response;
@@ -246,7 +246,7 @@ export async function summarizeLogs(serviceName: string, logs: string, settings:
 export async function getAvailableModels(settings: AiSettings) {
   if (settings.provider === 'ollama') {
     try {
-      const response = await fetchWithTimeout("/ollama/api/tags", {}, 15000);
+      const response = await fetchWithTimeout("/api/ollama/tags", {}, 15000);
       if (!response.ok) {
         if (response.status === 404) throw new Error("Ollama not running. Start Ollama with: ollama serve");
         throw new Error(`Failed to fetch Ollama models: ${response.status}`);

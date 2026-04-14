@@ -47,8 +47,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     { id: 'ollama', label: 'Ollama' },
     { id: 'anthropic', label: 'Anthropic' },
     { id: 'azure', label: 'Microsoft Azure Cloud' },
-    { id: 'aws', label: 'AWS' },
-    { id: 'vertexai', label: 'Google Cloud Vertex AI' },
     { id: 'openrouter', label: 'OpenRouter' },
     { id: 'groq', label: 'Groq' },
   ];
@@ -275,6 +273,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     <h3 className="text-2xl font-bold mb-8">Setup {aiProviders.find(p => p.id === selectedProviderSetup)?.label}</h3>
                     
                     <div className="space-y-8 bg-bg-main/50 p-6 rounded-2xl border border-border-main">
+                      {/* Display Name - All Providers */}
                       <div className="space-y-2">
                         <label className="text-sm font-semibold block">Display Name</label>
                         <p className="text-xs text-text-muted mb-2">A name which you can use to identify this provider when selecting it in the UI.</p>
@@ -287,37 +286,31 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-semibold block">API Base</label>
-                        <input 
-                          type="text"
-                          value={aiSettings.endpoint}
-                          onChange={(e) => updateAiSettings({ endpoint: e.target.value })}
-                          placeholder="http://127.0.0.1:11434"
-                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-semibold block flex items-baseline gap-2">
-                          {selectedProviderSetup === 'ollama' ? 'Ollama API Key' : 'API Key'} 
-                          <span className="text-text-muted font-normal text-xs">(optional)</span>
-                        </label>
-                        <p className="text-xs text-text-muted mb-2">
-                          {selectedProviderSetup === 'ollama' 
-                            ? "Optional API key used when connecting to Ollama Cloud (i.e. API base is https://ollama.com)."
-                            : "Enter your provider API key here."}
-                        </p>
-                        <input 
-                          type="password"
-                          value={aiSettings.apiKey}
-                          onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
-                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
-                        />
-                      </div>
-
+                      {/* Provider-Specific Fields */}
                       {selectedProviderSetup === 'ollama' && (
-                        <div className="space-y-4 pt-2">
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">API Base</label>
+                            <p className="text-xs text-text-muted mb-2">Ollama server URL (local or cloud)</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.endpoint}
+                              onChange={(e) => updateAiSettings({ endpoint: e.target.value })}
+                              placeholder="http://127.0.0.1:11434 or https://ollama.com"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Ollama API Key <span className="text-text-muted font-normal text-xs">(optional - for ollama.com cloud)</span></label>
+                            <p className="text-xs text-text-muted mb-2">Only required if using ollama.com cloud API</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="ollama_xxxxx (leave empty for local)"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
                           <div>
                             <button 
                               onClick={async () => {
@@ -332,11 +325,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                             </button>
                             <p className="text-xs text-text-muted mt-2">Retrieve the latest available models for this provider.</p>
                           </div>
-                          
-                          <div className="space-y-2 pt-2 border-t border-border-main">
+                          <div className="space-y-2">
                             <label className="text-sm font-semibold block">Default Model</label>
-                            <p className="text-xs text-text-muted mb-2">The model to use by default for this provider unless otherwise specified.</p>
-                            
+                            <p className="text-xs text-text-muted mb-2">The model to use by default</p>
                             {availableModels.length > 0 ? (
                               <select 
                                 value={aiSettings.model}
@@ -352,44 +343,224 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                                 type="text"
                                 value={aiSettings.model}
                                 onChange={(e) => updateAiSettings({ model: e.target.value })}
-                                placeholder="E.g. gpt-4 or llama3"
+                                placeholder="llama3, mistral, codellama, etc."
                                 className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
                               />
                             )}
                           </div>
-                        </div>
+                        </>
                       )}
-                      
-                      {selectedProviderSetup !== 'ollama' && (
-                        <div className="space-y-2 pt-2">
-                          <label className="text-sm font-semibold block">Default Model</label>
-                          <p className="text-xs text-text-muted mb-2">The default model to use for inferences.</p>
-                          <input 
-                            type="text"
-                            value={aiSettings.model}
-                            onChange={(e) => updateAiSettings({ model: e.target.value })}
-                            placeholder="E.g. gpt-4"
-                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
-                          />
-                        </div>
+
+                      {selectedProviderSetup === 'openai' && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">OpenAI API Key <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Get your API key from platform.openai.com</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="sk-xxxxx..."
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Organization ID <span className="text-text-muted font-normal text-xs">(optional)</span></label>
+                            <p className="text-xs text-text-muted mb-2">Required only if you belong to multiple organizations</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.organizationId ?? ''}
+                              onChange={(e) => updateAiSettings({ organizationId: e.target.value })}
+                              placeholder="org-xxxxx..."
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Default Model</label>
+                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.model}
+                              onChange={(e) => updateAiSettings({ model: e.target.value })}
+                              placeholder="gpt-4o, gpt-4-turbo, gpt-3.5-turbo"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {selectedProviderSetup === 'anthropic' && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Anthropic API Key <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Get your API key from console.anthropic.com</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="sk-ant-xxxxx..."
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">API Version <span className="text-text-muted font-normal text-xs">(optional)</span></label>
+                            <p className="text-xs text-text-muted mb-2">Used for the anthropic-version header. Default is 2023-06-01</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.apiVersion ?? ''}
+                              onChange={(e) => updateAiSettings({ apiVersion: e.target.value })}
+                              placeholder="2023-06-01"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Default Model</label>
+                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.model}
+                              onChange={(e) => updateAiSettings({ model: e.target.value })}
+                              placeholder="claude-3-5-sonnet-20240620"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {selectedProviderSetup === 'azure' && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Azure OpenAI Endpoint <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Your Azure OpenAI resource endpoint URL</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.endpoint}
+                              onChange={(e) => updateAiSettings({ endpoint: e.target.value })}
+                              placeholder="https://your-resource.openai.azure.com/"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Azure API Key <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Your Azure OpenAI API key</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="Azure API key"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">API Version <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Azure API version requirement (e.g. 2024-02-15-preview)</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.apiVersion ?? ''}
+                              onChange={(e) => updateAiSettings({ apiVersion: e.target.value })}
+                              placeholder="2024-02-15-preview"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Deployment Name <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Your Azure OpenAI deployment name</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.model}
+                              onChange={(e) => updateAiSettings({ model: e.target.value })}
+                              placeholder="gpt-4o-deployment"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {selectedProviderSetup === 'openrouter' && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">OpenRouter API Key <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Get your API key from openrouter.ai</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="sk-or-xxxxx..."
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Site URL <span className="text-text-muted font-normal text-xs">(optional)</span></label>
+                            <p className="text-xs text-text-muted mb-2">Sent as HTTP-Referer for app ranking</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.siteUrl ?? ''}
+                              onChange={(e) => updateAiSettings({ siteUrl: e.target.value })}
+                              placeholder="https://your-domain.com"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Site Name <span className="text-text-muted font-normal text-xs">(optional)</span></label>
+                            <p className="text-xs text-text-muted mb-2">Sent as X-Title header for app ranking</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.siteName ?? ''}
+                              onChange={(e) => updateAiSettings({ siteName: e.target.value })}
+                              placeholder="Enterprise Dashboard"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Default Model</label>
+                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.model}
+                              onChange={(e) => updateAiSettings({ model: e.target.value })}
+                              placeholder="openai/gpt-4o, anthropic/claude-3.5-sonnet"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {selectedProviderSetup === 'groq' && (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Groq API Key <span className="text-red-500">*</span></label>
+                            <p className="text-xs text-text-muted mb-2">Get your API key from console.groq.com</p>
+                            <input 
+                              type="password"
+                              value={aiSettings.apiKey}
+                              onChange={(e) => updateAiSettings({ apiKey: e.target.value })}
+                              placeholder="gsk_xxxxx..."
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold block">Default Model</label>
+                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences (e.g. llama3-8b-8192)</p>
+                            <input 
+                              type="text"
+                              value={aiSettings.model}
+                              onChange={(e) => updateAiSettings({ model: e.target.value })}
+                              placeholder="llama3-8b-8192, mixtral-8x7b-32768"
+                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                            />
+                          </div>
+                        </>
                       )}
 
                       <div className="pt-6 border-t border-border-main">
                         <button 
                           onClick={async () => {
                             setIsTestingAi(true);
-                            // Generic test or generic success message since we don't have all SDKs integrated
-                            if (selectedProviderSetup !== 'ollama' && selectedProviderSetup !== 'gemini') {
-                              // Simulate a connection check
-                              await new Promise(r => setTimeout(r, 800));
-                              toast.success(`${aiProviders.find(p => p.id === selectedProviderSetup)?.label} connection verified (Simulated).`);
+                            const res = await testConnection();
+                            if (res.success) {
+                              toast.success(res.message);
                             } else {
-                              const res = await testConnection();
-                              if (res.success) {
-                                toast.success(res.message);
-                              } else {
-                                toast.error('Connection failed: ' + res.message);
-                              }
+                              toast.error('Connection failed: ' + res.message);
                             }
                             setIsTestingAi(false);
                           }}

@@ -40,6 +40,7 @@ import OnboardingTracker from './components/OnboardingTracker';
 import GlobalSearchModal from './components/GlobalSearchModal';
 import SettingsModal from './components/SettingsModal';
 import UserManagementPanel from './components/UserManagementPanel';
+import PlatformChatbot from './components/PlatformChatbot';
 
 type DashboardType = 'executive' | 'application' | 'infrastructure' | 'noc' | 'onboarding';
 
@@ -76,7 +77,7 @@ export default function App() {
   const [onboardingCount, setOnboardingCount] = useState(0);
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isAdmin && token) {
       Promise.all([
         fetch('/api/auth/admin/pending-count', {
           headers: { 'Authorization': 'Bearer ' + token }
@@ -86,13 +87,11 @@ export default function App() {
         })
       ])
         .then(([usersRes, onboardingRes]) => {
-          const usersData = usersRes.json();
-          const onboardingData = onboardingRes.json();
-          Promise.all([usersData, onboardingData])
-            .then(([usersData, onboardingData]) => {
-              setPendingCount(usersData.count || 0);
-              setOnboardingCount(onboardingData.count || 0);
-            });
+          return Promise.all([usersRes.json(), onboardingRes.json()]);
+        })
+        .then(([usersData, onboardingData]) => {
+          setPendingCount(usersData.count || 0);
+          setOnboardingCount(onboardingData.count || 0);
         })
         .catch(() => {});
     }
@@ -323,7 +322,6 @@ export default function App() {
                     : "text-text-secondary hover:bg-border-main/50 hover:text-text-main"
                 )}
               >
-                <item.icon size={18} className={cn(activeDashboard === item.id ? "text-inverse-text" : "text-text-muted group-hover:text-text-main")} />
                 <span className={cn("text-xs font-medium whitespace-nowrap transition-opacity", !isSidebarOpen && "md:opacity-0")}>
                   {item.label}
                 </span>
@@ -385,6 +383,8 @@ export default function App() {
         onClose={() => setIsSearchOpen(false)} 
         onNavigate={setActiveDashboard}
       />
+      
+      <PlatformChatbot />
     </div>
   );
 }

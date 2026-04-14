@@ -8,7 +8,15 @@ export interface TelemetryData {
   memory: number;
 }
 
-const WS_URL = 'ws://localhost:5000/api/telemetry';
+const getWsUrl = (path: string) => {
+  if (typeof window === 'undefined') return `ws://localhost:5000${path}`;
+  if (import.meta.env.PROD) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}${path}`;
+  }
+  return `ws://localhost:5000${path}`;
+};
+const WS_URL = getWsUrl('/api/telemetry');
 
 function generateSimulatedData(prev: TelemetryData): TelemetryData {
   const jitter = (val: number, range: number, min: number, max: number) =>

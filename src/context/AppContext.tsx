@@ -24,7 +24,7 @@ export interface PortfolioApp {
   owner: string;
 }
 
-export type AiProvider = 'gemini' | 'ollama' | 'bedrock' | 'openai' | 'anthropic' | 'azure' | 'aws' | 'vertexai' | 'openrouter' | 'groq';
+export type AiProvider = 'ollama' | 'openai' | 'anthropic' | 'azure' | 'openrouter' | 'groq';
 
 export interface ServiceNowSettings {
   instanceUrl: string;
@@ -39,6 +39,10 @@ export interface AiSettings {
   model: string;
   endpoint: string;
   displayName?: string;
+  apiVersion?: string;
+  organizationId?: string;
+  siteUrl?: string;
+  siteName?: string;
 }
 
 export interface AlertRules {
@@ -125,7 +129,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     function connect() {
       try {
-        ws = new WebSocket('ws://localhost:5000/api/portfolio');
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = import.meta.env.PROD ? `${protocol}//${window.location.host}/api/portfolio` : 'ws://localhost:5000/api/portfolio';
+        ws = new WebSocket(wsUrl);
         ws.onerror = () => {};
         ws.onmessage = (event) => {
           try {
@@ -160,7 +166,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (theme === 'dark') document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); localStorage.setItem('observability_theme', theme); }, [theme]);
   const setTheme = (newTheme: 'light' | 'dark') => setThemeState(newTheme);
 
-  const [aiSettings, setAiSettings] = useState<AiSettings>(() => { try { const saved = localStorage.getItem('observability_ai_settings'); if (saved) { const parsed = JSON.parse(saved); if (!['gemini','ollama','bedrock','openai','anthropic','azure','aws','vertexai','openrouter','groq'].includes(parsed.provider)) { parsed.provider = 'ollama'; parsed.model = 'llama3'; } return parsed; } } catch { return DEFAULT_AI_SETTINGS; } return DEFAULT_AI_SETTINGS; });
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => { try { const saved = localStorage.getItem('observability_ai_settings'); if (saved) { const parsed = JSON.parse(saved); if (!['ollama','openai','anthropic','azure','openrouter','groq'].includes(parsed.provider)) { parsed.provider = 'ollama'; parsed.model = 'llama3'; } return parsed; } } catch { return DEFAULT_AI_SETTINGS; } return DEFAULT_AI_SETTINGS; });
   const [serviceNowSettings, setServiceNowSettings] = useState<ServiceNowSettings>(() => { try { const saved = localStorage.getItem('observability_sn_settings'); if (saved) return JSON.parse(saved); } catch { return DEFAULT_SN_SETTINGS; } return DEFAULT_SN_SETTINGS; });
   const [alertRules, setAlertRules] = useState<AlertRules>(() => { try { const saved = localStorage.getItem('observability_alert_rules'); if (saved) return JSON.parse(saved); } catch { return DEFAULT_ALERT_RULES; } return DEFAULT_ALERT_RULES; });
   const [environment, setEnvironmentState] = useState<Environment>(() => { const saved = localStorage.getItem('observability_environment'); if (saved === 'development' || saved === 'staging' || saved === 'production') return saved; return 'development'; });

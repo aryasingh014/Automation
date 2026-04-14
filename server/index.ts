@@ -10,6 +10,7 @@ import discoveryRoutes from './routes/discovery.js';
 import logRoutes from './routes/logs.js';
 import registryRoutes from './routes/registry.js';
 import infraRoutes from './routes/infra.js';
+import chatRoutes from './routes/chat.js';
 import { setupTelemetryWebSocket } from './telemetryWs.js';
 import { setupIncidentWS } from './incidentWs.js';
 import { setupWebhookWebSocket } from './routes/webhooks.js';
@@ -42,6 +43,12 @@ app.use('/api/logs', logRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/registry', registryRoutes);
 app.use('/api/infra', infraRoutes);
+app.use('/api/chat', chatRoutes);
+
+app.post('/api/rum/ingest', (req, res) => {
+  // Acknowledge RUM tracking data without saving to avoid 404 errors in production
+  res.status(200).json({ success: true, message: "RUM telemetry received" });
+});
 
 app.get('/api/incidents', async (req, res) => {
   const { SERVICENOW_INSTANCE_URL, SERVICENOW_USER, SERVICENOW_PASSWORD } = process.env;

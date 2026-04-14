@@ -19,6 +19,26 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+
+    // Password strength validation
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ message: 'Password must contain at least one uppercase letter' });
+    }
+    if (!/[a-z]/.test(password)) {
+      return res.status(400).json({ message: 'Password must contain at least one lowercase letter' });
+    }
+    if (!/[0-9]/.test(password)) {
+      return res.status(400).json({ message: 'Password must contain at least one number' });
+    }
+
     const userExists = await User.findOne({ email });
     if (userExists) {
       if (userExists.status === 'pending') {

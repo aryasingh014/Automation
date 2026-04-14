@@ -60,6 +60,7 @@ function getEC2Client() {
  * Discover EC2 instances from AWS
  */
 export async function discoverEC2Instances(): Promise<EC2Instance[]> {
+  if (!isAWSConfigured()) return [];
   try {
     const client = getEC2Client();
     
@@ -194,7 +195,9 @@ export async function getEC2Metrics(instanceId: string): Promise<EC2Metrics | nu
 export function isAWSConfigured(): boolean {
   return !!(
     process.env.AWS_ACCESS_KEY_ID && 
-    process.env.AWS_SECRET_ACCESS_KEY
+    process.env.AWS_ACCESS_KEY_ID !== 'your-aws-access-key' &&
+    process.env.AWS_SECRET_ACCESS_KEY &&
+    process.env.AWS_SECRET_ACCESS_KEY !== 'your-aws-secret-key'
   );
 }
 
@@ -216,7 +219,10 @@ export async function getNodeExporterMetrics(ip: string, port: number = 9100): P
   try {
     const url = `http://${ip}:${port}/metrics`;
     
-    const response = await fetch(url, { timeout: 5000 });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!response.ok) {
       console.error(`[InfraMonitor] Node Exporter returned ${response.status}`);
       return null;

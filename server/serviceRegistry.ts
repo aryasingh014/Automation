@@ -77,7 +77,9 @@ export function registerService(data: {
     registeredAt: new Date(),
     lastHeartbeat: new Date(),
     status: 'unknown',
-    metrics: {},
+    metrics: {
+      timestamp: new Date(),
+    },
     metadata: data.metadata
   };
   

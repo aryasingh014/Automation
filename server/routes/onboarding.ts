@@ -12,6 +12,29 @@ router.post('/request', protect, async (req: AuthRequest, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
+    // Validate appName
+    if (appName.length < 3 || appName.length > 100) {
+      return res.status(400).json({ message: 'App name must be between 3 and 100 characters' });
+    }
+
+    // Validate tier
+    const validTiers = ['T1', 'T2', 'T3'];
+    if (!validTiers.includes(tier)) {
+      return res.status(400).json({ message: 'Tier must be T1, T2, or T3' });
+    }
+
+    // Validate environment
+    const validEnvironments = ['Production', 'Staging', 'Development'];
+    if (!validEnvironments.includes(environment)) {
+      return res.status(400).json({ message: 'Environment must be Production, Staging, or Development' });
+    }
+
+    // Validate owner email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(owner)) {
+      return res.status(400).json({ message: 'Owner must be a valid email address' });
+    }
+
     const request = await OnboardingRequest.create({
       appName,
       tier,

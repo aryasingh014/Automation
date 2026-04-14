@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Bell, 
   AlertCircle, 
@@ -92,7 +92,48 @@ export default function NOCDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Simulate new alerts based on telemetry
+// Simulate new alerts based on telemetry
+  type AlertType = { id: string; severity: string; service: string; message: string; time: string; status: string };
+  
+  const autonomousTriggerRef = useRef<((alert: AlertType) => Promise<void>) | null>(null);
+  
+  const autonomousTrigger = useCallback(async (alert: typeof newAlert) => {
+    toast.info("Autonomous Engine: Critical anomaly detected. Analyzing and creating incident...", {
+      duration: 6000,
+    });
+
+    try {
+      const activeIncident = await checkIncident(alert.service);
+      
+      if (activeIncident && activeIncident.exists) {
+        toast.info(`Active incident ${activeIncident.number} already exists for ${alert.service}. Deduplicating alert...`, {
+          duration: 5000,
+        });
+        return;
+      }
+
+      const mockLogs = `
+        [INFO] ${new Date().toLocaleTimeString()} Request received for /api/v1/data
+        [ERROR] ${new Date().toLocaleTimeString()} Timeout connection to DB_CLUSTER_01
+        [WARN] ${new Date().toLocaleTimeString()} Retrying connection (1/3)...
+        [CRITICAL] ${new Date().toLocaleTimeString()} Autonomous trigger for ${alert.id}
+      `;
+      const analysis = await summarizeLogs(alert.service, mockLogs, aiSettings);
+      const result = await createIncident(alert.id + " (Autonomous) on " + alert.service, analysis, 'Critical');
+      toast.success(`Autonomous Incident ${result.number} created successfully!`, {
+        description: "AIOps engine resolved this alert autonomously."
+      });
+      fetchIncidents();
+    } catch (error) {
+      console.error("Autonomous Action Failed:", error);
+    }
+  }, [aiSettings, checkIncident, createIncident, fetchIncidents]);
+
+  // Store latest trigger for cleanup
+  useEffect(() => {
+    autonomousTriggerRef.current = autonomousTrigger;
+  }, [autonomousTrigger]);
+
   useEffect(() => {
     if (telemetry.latency > 400 || telemetry.errorRate > 0.15) {
       const severity = (telemetry.latency > 400 || telemetry.errorRate > 0.15) ? 'Critical' : 'Warning';
@@ -108,43 +149,11 @@ export default function NOCDashboard() {
       toast.error(`New ${severity} Alert: ${newAlert.message}`);
 
       // Autonomous Incident Engine
-      if (severity === 'Critical' && serviceNowSettings.autoIncidentEnabled) {
-        const autonomousTrigger = async () => {
-          toast.info("Autonomous Engine: Critical anomaly detected. Analyzing and creating incident...", {
-            duration: 6000,
-          });
-
-          try {
-            const activeIncident = await checkIncident(newAlert.service);
-            
-            if (activeIncident && activeIncident.exists) {
-              toast.info(`Active incident ${activeIncident.number} already exists for ${newAlert.service}. Deduplicating alert...`, {
-                duration: 5000,
-              });
-              return; // Stop execution, do not create a new incident
-            }
-
-            const mockLogs = `
-              [INFO] ${new Date().toLocaleTimeString()} Request received for /api/v1/data
-              [ERROR] ${new Date().toLocaleTimeString()} Timeout connection to DB_CLUSTER_01
-              [WARN] ${new Date().toLocaleTimeString()} Retrying connection (1/3)...
-              [CRITICAL] ${new Date().toLocaleTimeString()} Autonomous trigger for ${newAlert.id}
-            `;
-            const analysis = await summarizeLogs(newAlert.service, mockLogs, aiSettings);
-            const result = await createIncident(newAlert.id + " (Autonomous) on " + newAlert.service, analysis, 'Critical');
-            toast.success(`Autonomous Incident ${result.number} created successfully!`, {
-              description: "AIOps engine resolved this alert autonomously."
-            });
-            fetchIncidents();
-          } catch (error) {
-            console.error("Autonomous Action Failed:", error);
-            // No need for a toast here as createIncident likely handles errors or they are logged
-          }
-        };
-        autonomousTrigger();
+      if (severity === 'Critical' && serviceNowSettings.autoIncidentEnabled && autonomousTriggerRef.current) {
+        autonomousTriggerRef.current(newAlert);
       }
     }
-  }, [telemetry, serviceNowSettings.autoIncidentEnabled]);
+  }, [telemetry, serviceNowSettings.autoIncidentEnabled, autonomousTrigger]);
 
   const handleViewLogs = async (alert: any) => {
     toast.promise(
