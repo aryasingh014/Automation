@@ -16,6 +16,7 @@ import { setupIncidentWS } from './incidentWs.js';
 import { setupWebhookWebSocket } from './routes/webhooks.js';
 import { setupLogWebSocket } from './routes/logs.js';
 import { setupPortfolioWebSocket } from './portfolioWs.js';
+import { seedDatabase } from './seedData.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ const app = express();
 // Connect to MongoDB
 connectDB().then(() => {
   console.log('[API] Database connection initialized');
+  seedDatabase();
 }).catch((err) => {
   console.error('[API] Database connection failed - running in limited mode:', err.message);
 });
@@ -55,8 +57,8 @@ app.get('/api/incidents', async (req, res) => {
   console.log('[API] Fetching incidents from ServiceNow...');
 
   if (!SERVICENOW_INSTANCE_URL || !SERVICENOW_USER || !SERVICENOW_PASSWORD) {
-    console.error('[API] ServiceNow credentials missing');
-    return res.status(500).json({ error: 'ServiceNow credentials are not configured on the server.' });
+    console.warn('[API] ServiceNow credentials not configured — returning empty incidents list');
+    return res.json([]);
   }
 
   try {
@@ -72,7 +74,7 @@ app.get('/api/incidents', async (req, res) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[API] ServiceNow error (${response.status}):`, errorText);
-      return res.status(response.status).json({ error: `ServiceNow error: ${errorText}` });
+      return res.json([]); // Return empty list instead of 500
     }
 
     const data = await response.json();
@@ -91,7 +93,7 @@ app.get('/api/incidents', async (req, res) => {
     res.json(incidents);
   } catch (error: any) {
     console.error('[API] Failed to fetch ServiceNow incidents:', error);
-    res.status(500).json({ error: 'Failed to fetch incidents from ServiceNow.' });
+    res.json([]); // Return empty list instead of 500
   }
 });
 

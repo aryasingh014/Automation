@@ -24,7 +24,7 @@ export interface PortfolioApp {
   owner: string;
 }
 
-export type AiProvider = 'ollama' | 'openai' | 'anthropic' | 'azure' | 'openrouter' | 'groq';
+export type AiProvider = 'ollama' | 'openai' | 'anthropic' | 'azure' | 'openrouter' | 'groq' | 'gemini' | 'bedrock' | 'vertexai';
 
 export interface ServiceNowSettings {
   instanceUrl: string;
@@ -126,13 +126,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
 
     function connect() {
+      if (destroyed) return;
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = import.meta.env.PROD ? `${protocol}//${window.location.host}/api/portfolio` : 'ws://localhost:5000/api/portfolio';
+        // Use wss:// in production (HTTPS), ws:// in development
+        const isProd = import.meta.env.PROD;
+        const protocol = isProd ? 'wss' : 'ws';
+        const wsUrl = isProd 
+          ? `${protocol}://${window.location.host}/api/portfolio`
+          : `${protocol}://${window.location.hostname}:5000/api/portfolio`;
         ws = new WebSocket(wsUrl);
-        ws.onerror = () => {};
+        ws.onerror = (e) => {
+          console.warn('[Portfolio WS] Connection error - data may appear static:', e);
+        };
+        ws.onopen = () => {
+          console.log('[Portfolio WS] Connected to real-time data feed');
+        };
         ws.onmessage = (event) => {
           try {
             const payload = JSON.parse(event.data);
@@ -145,7 +156,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
         ws.onclose = () => {
           ws = null;
-          reconnectTimeout = setTimeout(connect, 2000);
+          if (!destroyed) {
+            reconnectTimeout = setTimeout(connect, 2000);
+          }
         };
       } catch (err) {
         console.error('WebSocket connection error:', err);
@@ -155,8 +168,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     connect();
 
     return () => {
-      if (ws) ws.close();
+      destroyed = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws) {
+        ws.onclose = null; // prevent reconnect loop on intentional close
+        ws.close();
+      }
     };
   }, []);
 

@@ -1,17 +1,26 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import { protect, adminOnly, AuthRequest } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-const generateToken = (id: string) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
-    expiresIn: '30d',
-  });
+const isDbReady = () => mongoose.connection.readyState === 1;
+
+/** Embed role + email so the auth middleware can reconstruct a user without a DB round-trip */
+const generateToken = (id: string, role: string, email: string) => {
+  return jwt.sign(
+    { id, role, email },
+    process.env.JWT_SECRET || 'fallback_secret',
+    { expiresIn: '30d' }
+  );
 };
 
 router.post('/register', async (req, res) => {
+  if (!isDbReady()) {
+    return res.status(503).json({ message: 'Database unavailable. Registration is not possible in limited mode.' });
+  }
   try {
     const { email, password, name, department } = req.body;
     
@@ -36,19 +45,39 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Password must contain at least one lowercase letter' });
     }
     if (!/[0-9]/.test(password)) {
+      console.log(`[Auth] Registration failed: Password strength (no number) for ${email}`);
       return res.status(400).json({ message: 'Password must contain at least one number' });
     }
 
     const userExists = await User.findOne({ email });
     if (userExists) {
-      if (userExists.status === 'pending') {
-        return res.status(400).json({ message: 'Registration pending approval. Please wait for admin to review.' });
+      if (userExists.status === 'approved') {
+        console.log(`[Auth] Registration failed: User ${email} already exists and is approved`);
+        return res.status(400).json({ message: 'User already exists and is already approved. Please login.' });
       }
-      if (userExists.status === 'rejected') {
-        return res.status(400).json({ message: `Registration rejected. Reason: ${userExists.rejectionReason || 'No reason provided'}` });
-      }
-      return res.status(400).json({ message: 'User already exists' });
+
+      console.log(`[Auth] Re-registering user ${email} (Previous status: ${userExists.status})`);
+      
+      // Update existing user record and reset to pending
+      userExists.name = name;
+      userExists.password = password; // Pre-save middleware will hash it
+      userExists.department = department;
+      userExists.status = 'pending';
+      userExists.rejectionReason = undefined;
+      userExists.rejectedAt = undefined;
+      userExists.rejectedBy = undefined;
+      userExists.isActive = false;
+      userExists.requestedAt = new Date();
+      
+      await userExists.save();
+
+      return res.status(201).json({
+        message: 'Registration successful! Your account is pending approval. An admin will review your request.',
+        status: 'pending'
+      });
     }
+
+    console.log(`[Auth] Creating new user: ${email}`);
 
     const user = await User.create({ 
       email, 
@@ -70,9 +99,21 @@ router.post('/register', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
+  if (!isDbReady()) {
+    return res.status(503).json({ message: 'Database unavailable. Login is not possible in limited mode.' });
+  }
   try {
     const { email, password } = req.body;
-    const user: any = await User.findOne({ email });
+    
+    const query: any = {
+      $or: [
+        { email: email },
+        { name: email },
+        ...(mongoose.Types.ObjectId.isValid(email) ? [{ _id: email }] : [])
+      ]
+    };
+
+    const user: any = await User.findOne(query);
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
@@ -110,7 +151,7 @@ router.post('/login', async (req, res) => {
       email: user.email,
       role: user.role,
       status: user.status,
-      token: generateToken(user._id.toString()),
+      token: generateToken(user._id.toString(), user.role, user.email),
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -167,6 +208,19 @@ router.post('/admin/approve/:userId', protect, adminOnly, async (req: AuthReques
     user.approvedAt = new Date();
     user.approvedBy = req.user._id as any;
     await user.save();
+
+    const { Notification } = await import('../models/Telemetry.js');
+    if (Notification) {
+      await Notification.create({
+        type: 'email',
+        recipient: user.name || 'User',
+        recipientEmail: user.email,
+        message: `Your account has been approved by the admin. You can now log in to the platform.`,
+        subject: 'Account Approved',
+        status: 'sent',
+        sentAt: new Date()
+      });
+    }
 
     res.json({ message: 'User approved successfully', user });
   } catch (error: any) {
@@ -251,6 +305,22 @@ router.post('/seed-admin', async (req, res) => {
     res.json({ message: 'User is now admin', user: { email: user.email, role: user.role } });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/my-notifications', protect, async (req: AuthRequest, res) => {
+  try {
+    const { Notification } = await import('../models/Telemetry.js');
+    if (!Notification) {
+      return res.json([]);
+    }
+    const notifications = await Notification.find({ recipientEmail: req.user.email })
+      .sort({ sentAt: -1 })
+      .limit(50);
+    res.json(notifications);
+  } catch (error: any) {
+    console.error('[Auth] Failed to fetch notifications:', error);
+    res.json([]);
   }
 });
 

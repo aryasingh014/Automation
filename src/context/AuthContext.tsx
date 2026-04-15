@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useAppContext } from './AppContext';
 
 interface UserData {
   _id: string;
@@ -22,6 +23,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
+  const { addNotification } = useAppContext();
+
+  const fetchUserNotifications = async (authToken: string) => {
+    try {
+      const res = await fetch('/api/auth/my-notifications', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const notifications = await res.json();
+        if (notifications && notifications.length > 0) {
+          notifications.forEach((n: any) => {
+            addNotification({
+              type: n.type === 'email' ? 'info' : n.type,
+              title: n.subject || 'Notification',
+              message: n.message || ''
+            });
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[Auth] Failed to fetch notifications:', e);
+    }
+  };
 
   useEffect(() => {
     const initAuth = async () => {
@@ -35,6 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (res.ok) {
             const userData = await res.json();
             setUser(userData);
+            fetchUserNotifications(token);
           } else {
             setToken(null);
             localStorage.removeItem('token');
@@ -53,6 +78,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(newToken);
     setUser(userData);
     localStorage.setItem('token', newToken);
+    fetchUserNotifications(newToken);
   };
 
   const logout = () => {

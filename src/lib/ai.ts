@@ -152,6 +152,30 @@ async function callOllama(prompt: string, settings: AiSettings) {
   return accumulated;
 }
 
+async function callGroq(prompt: string, settings: AiSettings) {
+  const model = settings.model || "llama-3.1-70b-versatile";
+  const response = await fetchWithTimeout("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${settings.apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7
+    })
+  }, 60000);
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Groq Error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
 async function callGemini(prompt: string, settings: AiSettings) {
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(settings.apiKey);
@@ -175,11 +199,12 @@ export async function callAI(prompt: string, settings: AiSettings) {
       return callOllama(prompt, settings);
     case 'gemini':
       return callGemini(prompt, settings);
+    case 'groq':
+      return callGroq(prompt, settings);
     case 'bedrock':
       throw new Error("AWS Bedrock is coming soon");
     case 'vertexai':
     case 'openrouter':
-    case 'groq':
       throw new Error(`${settings.provider} support is coming soon`);
     default:
       throw new Error(`Unknown provider: ${settings.provider}`);
@@ -221,8 +246,16 @@ Required JSON: {"analysis": "string", "recommendations": ["string", "string", "s
     }
   } catch (error: any) {
     console.error("AI Error:", error);
+    const errorMsg = error.message || String(error);
+    if (errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('vision') || errorMsg.toLowerCase().includes('Unsupported') || errorMsg.toLowerCase().includes('does not support')) {
+      return {
+        analysis: "Vision/image analysis is not supported by the selected AI model. Please use a vision-capable model in Settings.",
+        recommendations: ["Switch to GPT-4o, Claude 3, or Gemini models for image analysis", "Use text-only queries instead"],
+        severity: "Warning"
+      };
+    }
     return {
-      analysis: "Error: " + error.message,
+      analysis: "Error: " + errorMsg,
       recommendations: ["Manual inspection required", "Verify AI settings"],
       severity: "Critical"
     };
@@ -239,7 +272,11 @@ export async function summarizeLogs(serviceName: string, logs: string, settings:
   try {
     return await callAI(prompt, settings);
   } catch (error: any) {
-    return "Error summarizing logs: " + error.message;
+    const errorMsg = error.message || "Unknown error";
+    if (errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('vision') || errorMsg.toLowerCase().includes('Unsupported')) {
+      return "Image/vision analysis requires a vision-capable AI model. Please use GPT-4o, Claude 3, or Gemini in Settings.";
+    }
+    return "Error summarizing logs: " + errorMsg;
   }
 }
 
@@ -258,11 +295,40 @@ export async function getAvailableModels(settings: AiSettings) {
     }
   }
 
+  if (settings.provider === 'groq' && settings.apiKey) {
+    try {
+      const response = await fetchWithTimeout("https://api.groq.com/openai/v1/models", {
+        headers: { "Authorization": `Bearer ${settings.apiKey}` }
+      }, 15000);
+      if (response.ok) {
+        const data = await response.json();
+        return data.data?.map((m: any) => m.id) || [];
+      }
+    } catch (e: any) {
+      console.warn("Failed to fetch Groq models:", e.message);
+    }
+  }
+
+  if (settings.provider === 'openai' && settings.apiKey) {
+    try {
+      const response = await fetchWithTimeout("https://api.openai.com/v1/models", {
+        headers: { "Authorization": `Bearer ${settings.apiKey}` }
+      }, 15000);
+      if (response.ok) {
+        const data = await response.json();
+        return data.data?.filter((m: any) => m.id.startsWith('gpt-')).map((m: any) => m.id) || [];
+      }
+    } catch (e: any) {
+      console.warn("Failed to fetch OpenAI models:", e.message);
+    }
+  }
+
   const models: Record<string, string[]> = {
     gemini: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'],
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
     anthropic: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'],
-    azure: ['gpt-4', 'gpt-35-turbo']
+    azure: ['gpt-4', 'gpt-35-turbo'],
+    groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'llama-3-70b-8192', 'mixtral-8x7b-32768']
   };
 
   return models[settings.provider] || [];

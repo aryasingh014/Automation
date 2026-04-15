@@ -21,7 +21,8 @@ import {
   CheckCircle,
   AlertCircle,
   ExternalLink,
-  Users
+  Users,
+  MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
@@ -42,7 +43,7 @@ import SettingsModal from './components/SettingsModal';
 import UserManagementPanel from './components/UserManagementPanel';
 import PlatformChatbot from './components/PlatformChatbot';
 
-type DashboardType = 'executive' | 'application' | 'infrastructure' | 'noc' | 'onboarding';
+type DashboardType = 'executive' | 'application' | 'infrastructure' | 'noc' | 'onboarding' | 'chatbot';
 
 export default function App() {
   const { user, isLoading, logout, token } = useAuth();
@@ -114,6 +115,7 @@ export default function App() {
     { id: 'infrastructure', label: 'Infrastructure', icon: Server },
     { id: 'noc', label: 'NOC / Operations', icon: Bell },
     { id: 'onboarding', label: 'Onboarding', icon: Rocket },
+    { id: 'chatbot', label: 'AI Assistant', icon: MessageCircle },
   ];
 
   const renderDashboard = () => {
@@ -123,6 +125,7 @@ export default function App() {
       case 'infrastructure': return <InfrastructureDashboard />;
       case 'noc': return <NOCDashboard />;
       case 'onboarding': return <OnboardingTracker />;
+      case 'chatbot': return null; // Rendered via PlatformChatbot fullscreen
       default: return <ExecutiveDashboard />;
     }
   };
@@ -363,18 +366,25 @@ export default function App() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-w-0 p-6">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeDashboard}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {renderDashboard()}
-            </motion.div>
-          </AnimatePresence>
+        <main className={cn("flex-1 min-w-0", activeDashboard !== 'chatbot' && "p-6")}>
+          {activeDashboard === 'chatbot' ? (
+            <PlatformChatbot 
+              forceFullscreen={true}
+              onNavigateAway={() => setActiveDashboard('executive')}
+            />
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeDashboard}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {renderDashboard()}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </main>
       </div>
       
@@ -384,7 +394,10 @@ export default function App() {
         onNavigate={setActiveDashboard}
       />
       
-      <PlatformChatbot />
+      {/* Floating chatbot — only shown when NOT on the chatbot nav tab */}
+      {activeDashboard !== 'chatbot' && (
+        <PlatformChatbot onOpenFullscreen={() => setActiveDashboard('chatbot')} />
+      )}
     </div>
   );
 }

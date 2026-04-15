@@ -103,7 +103,13 @@ export function useTelemetry(interval = 2000) {
     connect();
 
     return () => {
-      if (ws) ws.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => ws?.close();
+        } else {
+          ws.close();
+        }
+      }
       if (simInterval) clearInterval(simInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
@@ -170,7 +176,13 @@ export function useHistoricalTelemetry(points = 10, interval = 2000) {
     }
 
     return () => {
-      if (ws) ws.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => ws?.close();
+        } else {
+          ws.close();
+        }
+      }
       if (simInterval) clearInterval(simInterval);
     };
   }, [points, interval]);

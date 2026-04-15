@@ -149,8 +149,16 @@ Required JSON fields: "analysis" (string), "recommendations" (array of 3 strings
     }
   } catch (error: any) {
     console.error("AI API Error:", error);
+    const errorMsg = error.message || String(error);
+    if (errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('vision') || errorMsg.toLowerCase().includes('Unsupported')) {
+      return {
+        analysis: "Vision/image analysis is not supported by the current AI model. Please use a vision-capable model like gemini-1.5-pro or gpt-4o for image analysis.",
+        recommendations: ["Switch to a vision-enabled AI model in Settings", "Use text-only queries instead", "Try gemini-1.5-pro or OpenAI GPT-4o for image tasks"],
+        severity: "Warning"
+      };
+    }
     return {
-        analysis: "Error: " + (error.message || String(error)),
+        analysis: "Error: " + errorMsg,
         recommendations: ["Manual inspection required", "Verify AI Endpoint settings"],
         severity: "Critical"
     };
@@ -174,7 +182,11 @@ export async function summarizeLogs(serviceName: string, logs: string, settings:
     }
   } catch (error: any) {
     console.error("AI API Error:", error);
-    return "Error summarizing logs: " + (error.message || "Unknown error");
+    const errorMsg = error.message || "Unknown error";
+    if (errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('vision') || errorMsg.toLowerCase().includes('Unsupported')) {
+      return "Log summarization requires text-based AI. The current model does not support image inputs. Please switch to a model like gemini-1.5-flash in Settings.";
+    }
+    return "Error summarizing logs: " + errorMsg;
   }
 }
 

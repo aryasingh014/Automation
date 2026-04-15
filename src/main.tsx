@@ -17,10 +17,10 @@ if (typeof window !== 'undefined' && import.meta.env.PROD) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <AppProvider>
+    <AppProvider>
+      <AuthProvider>
         <App />
-      </AppProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </AppProvider>
   </StrictMode>,
 );

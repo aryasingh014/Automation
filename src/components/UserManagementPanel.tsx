@@ -32,7 +32,7 @@ interface UserManagementPanelProps {
   onClose: () => void;
 }
 
-type TabId = 'pending' | 'approved' | 'onboarding';
+type TabId = 'pending' | 'approved' | 'rejected' | 'onboarding';
 
 export default function UserManagementPanel({ onClose }: UserManagementPanelProps) {
   const { token } = useAuth();
@@ -265,6 +265,15 @@ export default function UserManagementPanel({ onClose }: UserManagementPanelProp
               <UserPlus size={16} /> Approved Users
             </button>
             <button
+              onClick={() => setActiveTab('rejected')}
+              className={cn(
+                "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                activeTab === 'rejected' ? "bg-inverse-bg text-inverse-text font-medium" : "text-text-secondary hover:bg-border-main hover:text-text-main"
+              )}
+            >
+              <XCircle size={16} /> Rejected Users
+            </button>
+            <button
               onClick={() => setActiveTab('onboarding')}
               className={cn(
                 "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
@@ -359,18 +368,20 @@ export default function UserManagementPanel({ onClose }: UserManagementPanelProp
               ) : (
                 <>
                   <h3 className="text-2xl font-bold mb-6">
-                    {activeTab === 'pending' ? 'Pending Requests' : 'Approved Users'}
+                    {activeTab === 'pending' ? 'Pending Requests' : 
+                     activeTab === 'approved' ? 'Approved Users' : 'Rejected Requests'}
                   </h3>
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
                       <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                     </div>
-                  ) : users.length === 0 ? (
-                    <div className="p-12 text-center border border-border-main rounded-xl">
-                      <p className="text-text-muted">
-                        {activeTab === 'pending' ? 'No pending requests' : 'No approved users'}
-                      </p>
-                    </div>
+                      ) : users.length === 0 ? (
+                        <div className="p-12 text-center border border-border-main rounded-xl">
+                          <p className="text-text-muted">
+                            {activeTab === 'pending' ? 'No pending requests' : 
+                             activeTab === 'approved' ? 'No approved users' : 'No rejected requests'}
+                          </p>
+                        </div>
                   ) : (
                     <div className="space-y-3">
                       {users.map((user) => (
@@ -424,6 +435,25 @@ export default function UserManagementPanel({ onClose }: UserManagementPanelProp
                                     title="Reject"
                                   >
                                     <XCircle size={16} />
+                                  </button>
+                                </>
+                              ) : activeTab === 'rejected' ? (
+                                <>
+                                  <button
+                                    onClick={() => handleApprove(user._id)}
+                                    disabled={processingId === user._id}
+                                    className="p-2 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors disabled:opacity-50"
+                                    title="Restore User"
+                                  >
+                                    <UserPlus size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(user._id)}
+                                    disabled={processingId === user._id}
+                                    className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors disabled:opacity-50"
+                                    title="Delete User"
+                                  >
+                                    <Trash2 size={16} />
                                   </button>
                                 </>
                               ) : (

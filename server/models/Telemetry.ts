@@ -26,15 +26,25 @@ const alertSchema = new mongoose.Schema({
 alertSchema.index({ createdAt: -1 });
 
 const incidentSchema = new mongoose.Schema({
-  number: String,
+  number: { type: String, required: true, unique: true },
   title: String,
   description: String,
-  severity: String,
-  status: String,
+  severity: { type: String, enum: ['P1', 'P2', 'P3', 'P4', 'Critical', 'High', 'Medium', 'Low'] },
+  status: { type: String, enum: ['New', 'In Progress', 'Assigned', 'Pending', 'Resolved', 'Closed', 'Cancelled'], default: 'New' },
   serviceName: String,
+  category: String,
+  assignedTo: String,
+  priority: String,
+  impact: String,
+  urgency: String,
+  rootCause: String,
+  impactAnalysis: String,
+  resolutionNotes: String,
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
   resolvedAt: Date,
-  source: { type: String, enum: ['manual', 'autonomous'], default: 'manual' }
+  source: { type: String, enum: ['manual', 'autonomous', 'servicenow'], default: 'servicenow' },
+  syncFromServiceNowAt: Date
 });
 
 const auditLogSchema = new mongoose.Schema({
@@ -68,9 +78,50 @@ const appConfigSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const appRegistrySchema = new mongoose.Schema({
+  appId: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  description: String,
+  status: { type: String, enum: ['active', 'degraded', 'down', 'maintenance', 'decommissioned'], default: 'active' },
+  category: { type: String, enum: ['database', 'api', 'frontend', 'backend', 'middleware', 'infrastructure', 'security', 'monitoring', 'other'], default: 'other' },
+  owner: String,
+  ownerEmail: String,
+  team: String,
+  environment: { type: String, enum: ['production', 'staging', 'development'], default: 'production' },
+  endpoint: String,
+  healthCheckUrl: String,
+  metadata: mongoose.Schema.Types.Mixed,
+  incidentCount: { type: Number, default: 0 },
+  lastIncidentAt: Date,
+  lastHealthCheckAt: Date,
+  lastHealthStatus: { type: String, enum: ['healthy', 'degraded', 'down', 'unknown'], default: 'unknown' },
+  isMonitored: { type: Boolean, default: true },
+  tags: [String],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const notificationSchema = new mongoose.Schema({
+  type: { type: String, enum: ['email', 'slack', 'sms', 'webhook', 'pagerduty'], required: true },
+  recipient: String,
+  recipientEmail: String,
+  channel: String,
+  message: String,
+  subject: String,
+  incidentId: String,
+  appId: String,
+  severity: String,
+  sentAt: { type: Date, default: Date.now },
+  status: { type: String, enum: ['sent', 'delivered', 'failed', 'pending'], default: 'pending' },
+  errorMessage: String,
+  metadata: mongoose.Schema.Types.Mixed
+});
+
 export const Telemetry = mongoose.model('Telemetry', telemetrySchema);
 export const Alert = mongoose.model('Alert', alertSchema);
 export const Incident = mongoose.model('Incident', incidentSchema);
 export const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 export const CustomDashboard = mongoose.model('CustomDashboard', customDashboardSchema);
 export const AppConfig = mongoose.model('AppConfig', appConfigSchema);
+export const AppRegistry = mongoose.model('AppRegistry', appRegistrySchema);
+export const Notification = mongoose.model('Notification', notificationSchema);

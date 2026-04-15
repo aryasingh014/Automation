@@ -3,6 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, Activity, Eye, EyeOff, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
+const RequirementMet = ({ met, text }: { met: boolean; text: string }) => (
+  <div className={`flex items-center gap-1.5 text-[10px] ${met ? 'text-green-500' : 'text-text-muted'}`}>
+    <div className={`w-1 h-1 rounded-full ${met ? 'bg-green-500' : 'bg-text-muted'}`}></div>
+    <span>{text}</span>
+  </div>
+);
+
 export default function LoginScreen() {
   const { login } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
@@ -11,12 +18,41 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
 const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     try {
+      if (!isLogin) {
+        // Client-side validation for registration
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          toast.error('Please enter a valid email address');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 8) {
+          toast.error('Password must be at least 8 characters');
+          setLoading(false);
+          return;
+        }
+        if (!/[A-Z]/.test(password)) {
+          toast.error('Password must contain at least one uppercase letter');
+          setLoading(false);
+          return;
+        }
+        if (!/[a-z]/.test(password)) {
+          toast.error('Password must contain at least one lowercase letter');
+          setLoading(false);
+          return;
+        }
+        if (!/[0-9]/.test(password)) {
+          toast.error('Password must contain at least one number');
+          setLoading(false);
+          return;
+        }
+      }
+
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
       const body = isLogin ? { email, password } : { email, password, name };
       
@@ -33,9 +69,11 @@ const handleSubmit = async (e: React.FormEvent) => {
           toast.success('Login successful!');
           login(data.token, data);
         } else if (data.status === 'pending') {
-          toast.success(data.message || 'Registration successful! Awaiting approval.');
+          toast.info('Your account creation request has been submitted to admin for approval. You will be notified once your account is approved.');
           setIsLogin(true);
         }
+      } else if (res.status === 503) {
+        toast.error('Server database is unavailable. Please start MongoDB and restart the server.');
       } else if (res.status === 403) {
         if (data.status === 'pending') {
           toast.warning(data.message || 'Your account is pending approval.');
@@ -100,18 +138,18 @@ const handleSubmit = async (e: React.FormEvent) => {
           )}
 
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-text-secondary uppercase tracking-wider">Email Address</label>
+            <label className="text-xs font-mono text-text-secondary uppercase tracking-wider">Email or User ID</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Mail size={14} className="text-text-muted" />
               </div>
               <input 
-                type="email" 
+                type="text" 
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
                 className="w-full bg-bg-main border border-border-main rounded-lg py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-text-muted"
-                placeholder="admin@observability.os"
+                placeholder="admin@observability.os or admin"
               />
             </div>
           </div>
@@ -141,6 +179,17 @@ const handleSubmit = async (e: React.FormEvent) => {
                 {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
+            {!isLogin && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Requirements:</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  <RequirementMet met={password.length >= 8} text="8+ characters" />
+                  <RequirementMet met={/[A-Z]/.test(password)} text="Uppercase" />
+                  <RequirementMet met={/[a-z]/.test(password)} text="Lowercase" />
+                  <RequirementMet met={/[0-9]/.test(password)} text="Number" />
+                </div>
+              </div>
+            )}
           </div>
 
           <button 

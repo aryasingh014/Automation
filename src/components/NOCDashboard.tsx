@@ -26,6 +26,21 @@ const initialAlerts = [
   { id: 'ALR-4390', severity: 'Warning', service: 'Legacy CRM', message: 'Memory usage > 85% on node-04', time: '1h ago', status: 'Resolved' },
 ];
 
+// Helper to persist an alert to MongoDB
+async function persistAlert(alert: { alertId: string; severity: string; service: string; message: string; status: string }) {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    await fetch('/api/data/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ alertId: alert.alertId, severity: alert.severity, service: alert.service, message: alert.message, status: alert.status })
+    });
+  } catch (e) {
+    console.warn('[NOC] Failed to persist alert to DB:', e);
+  }
+}
+
 export default function NOCDashboard() {
   const [filter, setFilter] = useState('all');
   const [alerts, setAlerts] = useState(initialAlerts);
@@ -41,28 +56,20 @@ export default function NOCDashboard() {
     
     if (criticalAppsList.length > 0 || warningAppsList.length > 0) {
       // Create new alerts for critical/warning apps
-      const newAlerts = [];
+      const newAlerts: any[] = [];
       
       criticalAppsList.forEach(app => {
-        newAlerts.push({
-          id: `ALR-${Math.floor(Math.random() * 9000) + 1000}`,
-          severity: 'Critical',
-          service: app.name,
-          message: `Health degraded to ${app.health}% - Error rate: ${app.errorRate}`,
-          time: 'Just now',
-          status: 'Active'
-        });
+        const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
+        const alertObj = { id: alertId, severity: 'Critical', service: app.name, message: `Health degraded to ${app.health}% - Error rate: ${app.errorRate}`, time: 'Just now', status: 'Active' };
+        newAlerts.push(alertObj);
+        persistAlert({ alertId, severity: 'Critical', service: app.name, message: alertObj.message, status: 'Active' });
       });
       
       warningAppsList.slice(0, 2).forEach(app => {
-        newAlerts.push({
-          id: `ALR-${Math.floor(Math.random() * 9000) + 1000}`,
-          severity: 'Warning',
-          service: app.name,
-          message: `Elevated latency ${app.latency} detected`,
-          time: 'Just now',
-          status: 'Active'
-        });
+        const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
+        const alertObj = { id: alertId, severity: 'Warning', service: app.name, message: `Elevated latency ${app.latency} detected`, time: 'Just now', status: 'Active' };
+        newAlerts.push(alertObj);
+        persistAlert({ alertId, severity: 'Warning', service: app.name, message: alertObj.message, status: 'Active' });
       });
       
       if (newAlerts.length > 0) {
@@ -97,7 +104,7 @@ export default function NOCDashboard() {
   
   const autonomousTriggerRef = useRef<((alert: AlertType) => Promise<void>) | null>(null);
   
-  const autonomousTrigger = useCallback(async (alert: typeof newAlert) => {
+  const autonomousTrigger = useCallback(async (alert: AlertType) => {
     toast.info("Autonomous Engine: Critical anomaly detected. Analyzing and creating incident...", {
       duration: 6000,
     });
@@ -136,9 +143,10 @@ export default function NOCDashboard() {
 
   useEffect(() => {
     if (telemetry.latency > 400 || telemetry.errorRate > 0.15) {
-      const severity = (telemetry.latency > 400 || telemetry.errorRate > 0.15) ? 'Critical' : 'Warning';
+      const severity = 'Critical';
+      const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
       const newAlert = {
-        id: `ALR-${Math.floor(Math.random() * 9000) + 1000}`,
+        id: alertId,
         severity,
         service: 'Core API Hub',
         message: `Anomalous ${telemetry.latency > 400 ? 'latency' : 'error rate'} detected: ${telemetry.latency.toFixed(0)}ms`,
@@ -147,6 +155,8 @@ export default function NOCDashboard() {
       };
       setAlerts(prev => [newAlert, ...prev.slice(0, 8)]);
       toast.error(`New ${severity} Alert: ${newAlert.message}`);
+      // Persist to MongoDB
+      persistAlert({ alertId, severity, service: 'Core API Hub', message: newAlert.message, status: 'Active' });
 
       // Autonomous Incident Engine
       if (severity === 'Critical' && serviceNowSettings.autoIncidentEnabled && autonomousTriggerRef.current) {

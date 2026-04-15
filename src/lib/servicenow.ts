@@ -16,18 +16,14 @@ export async function createServiceNowIncident(
   impact: string = "2",
   settings: ServiceNowSettings
 ) {
-  // In development, we use Vite's proxy (defined in vite.config.ts) to avoid CORS issues if URL is empty.
-  // We use the provided settings for instanceUrl, user, and password.
+  if (!settings.instanceUrl || !settings.user || !settings.password) {
+    throw new Error("ServiceNow is not configured. Please configure ServiceNow in Settings.");
+  }
+
   const isDev = import.meta.env.DEV;
-  
-  // If we are in dev and the URL is the default/example one, we might want to use the proxy
-  // However, the user provided a URL, so we should use it. 
-  // Vite proxy only works if the fetch URL starts with /api/... and doesn't have a protocol.
-  // So we handle both absolute and relative (proxy) cases.
   
   let baseUrl = settings.instanceUrl;
   if (isDev && (baseUrl === "" || baseUrl.includes("dev363754.service-now.com"))) {
-    // If it's the default dev instance, use the proxy for local development
     baseUrl = "";
   }
 
@@ -52,8 +48,33 @@ export async function createServiceNowIncident(
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `ServiceNow Error: ${response.status}`);
+      const contentType = response.headers.get('content-type') || '';
+      let errorMessage = `ServiceNow Error: ${response.status}`;
+      if (contentType.includes('application/json')) {
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.message || errorData.result?.error?.message || errorMessage;
+        } catch {
+          errorMessage = `ServiceNow Error: ${response.status} - ${response.statusText}`;
+        }
+      } else {
+        const errorText = await response.text();
+        if (errorText.includes('<html>')) {
+          errorMessage = `ServiceNow connection failed (${response.status}). Check your instance URL and credentials.`;
+        } else {
+          errorMessage = `ServiceNow Error: ${response.status} - ${errorText.substring(0, 100)}`;
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const bodyText = await response.text();
+      if (bodyText.includes('<html') || bodyText.includes('<!DOCTYPE')) {
+        throw new Error('ServiceNow returned an HTML page (possible login redirect). Check your instance URL and credentials.');
+      }
+      throw new Error(`ServiceNow returned unexpected content-type: ${contentType}`);
     }
 
     const data = await response.json();
@@ -99,6 +120,12 @@ export async function checkActiveIncident(
 
     if (!response.ok) {
       console.warn("Failed to check active incidents, proceeding with creation anyway.");
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      console.warn("ServiceNow returned non-JSON response when checking incidents, skipping check.");
       return null;
     }
 

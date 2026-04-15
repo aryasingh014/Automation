@@ -375,17 +375,50 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                               className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold block">Default Model</label>
-                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
-                            <input 
-                              type="text"
-                              value={aiSettings.model}
-                              onChange={(e) => updateAiSettings({ model: e.target.value })}
-                              placeholder="gpt-4o, gpt-4-turbo, gpt-3.5-turbo"
-                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
-                            />
+                          <div>
+                            <button 
+                              onClick={async () => {
+                                if (!aiSettings.apiKey) {
+                                  toast.error('Please enter API key first');
+                                  return;
+                                }
+                                setIsFetchingModels(true);
+                                await fetchModels();
+                                setIsFetchingModels(false);
+                              }}
+                              disabled={isFetchingModels || !aiSettings.apiKey}
+                              className="px-4 py-2 bg-inverse-bg text-inverse-text rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                            >
+                              {isFetchingModels ? 'Fetching...' : 'Fetch Available Models'}
+                            </button>
+                            <p className="text-xs text-text-muted mt-2">Retrieve the latest available models from OpenAI.</p>
                           </div>
+                          {availableModels.length > 0 ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <select 
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm appearance-none font-mono"
+                              >
+                                {availableModels.map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                              <input 
+                                type="text"
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                placeholder="gpt-4o, gpt-4-turbo, gpt-3.5-turbo"
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                              />
+                            </div>
+                          )}
                         </>
                       )}
 
@@ -413,17 +446,50 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                               className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold block">Default Model</label>
-                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
-                            <input 
-                              type="text"
-                              value={aiSettings.model}
-                              onChange={(e) => updateAiSettings({ model: e.target.value })}
-                              placeholder="claude-3-5-sonnet-20240620"
-                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
-                            />
+                          <div>
+                            <button 
+                              onClick={async () => {
+                                if (!aiSettings.apiKey) {
+                                  toast.error('Please enter API key first');
+                                  return;
+                                }
+                                setIsFetchingModels(true);
+                                await fetchModels();
+                                setIsFetchingModels(false);
+                              }}
+                              disabled={isFetchingModels || !aiSettings.apiKey}
+                              className="px-4 py-2 bg-inverse-bg text-inverse-text rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                            >
+                              {isFetchingModels ? 'Fetching...' : 'Fetch Available Models'}
+                            </button>
+                            <p className="text-xs text-text-muted mt-2">Retrieve the latest available models from Anthropic.</p>
                           </div>
+                          {availableModels.length > 0 ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <select 
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm appearance-none font-mono"
+                              >
+                                {availableModels.map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                              <input 
+                                type="text"
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                placeholder="claude-3-5-sonnet-20240620"
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                              />
+                            </div>
+                          )}
                         </>
                       )}
 
@@ -538,17 +604,50 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                               className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
                             />
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold block">Default Model</label>
-                            <p className="text-xs text-text-muted mb-2">The default model to use for inferences (e.g. llama3-8b-8192)</p>
-                            <input 
-                              type="text"
-                              value={aiSettings.model}
-                              onChange={(e) => updateAiSettings({ model: e.target.value })}
-                              placeholder="llama3-8b-8192, mixtral-8x7b-32768"
-                              className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
-                            />
+                          <div>
+                            <button 
+                              onClick={async () => {
+                                if (!aiSettings.apiKey) {
+                                  toast.error('Please enter API key first');
+                                  return;
+                                }
+                                setIsFetchingModels(true);
+                                await fetchModels();
+                                setIsFetchingModels(false);
+                              }}
+                              disabled={isFetchingModels || !aiSettings.apiKey}
+                              className="px-4 py-2 bg-inverse-bg text-inverse-text rounded-lg text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                            >
+                              {isFetchingModels ? 'Fetching...' : 'Fetch Available Models'}
+                            </button>
+                            <p className="text-xs text-text-muted mt-2">Retrieve the latest available models from Groq.</p>
                           </div>
+                          {availableModels.length > 0 ? (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <select 
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm appearance-none font-mono"
+                              >
+                                {availableModels.map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold block">Default Model</label>
+                              <p className="text-xs text-text-muted mb-2">The default model to use for inferences</p>
+                              <input 
+                                type="text"
+                                value={aiSettings.model}
+                                onChange={(e) => updateAiSettings({ model: e.target.value })}
+                                placeholder="llama-3.1-70b-versatile"
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm font-mono"
+                              />
+                            </div>
+                          )}
                         </>
                       )}
 
