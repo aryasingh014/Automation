@@ -270,7 +270,7 @@ export async function getAppsFromLocalDB(): Promise<{
 }> {
   let apps: any[] = [];
   try {
-    apps = await AppRegistry?.find?.({ isMonitored: true }).sort({ name: 1 }) || [];
+    apps = await AppRegistry?.find?.({}).sort({ name: 1 }) || [];
   } catch (e) {
     console.warn('[Sync] AppRegistry find failed:', (e as any)?.message);
     return { apps: [], total: 0, stats: { total: 0, active: 0, degraded: 0, down: 0, byCategory: {} } };

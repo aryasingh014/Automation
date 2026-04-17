@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import { cn } from './lib/utils';
 import { useAppContext } from './context/AppContext';
+import { PLATFORM_INFO } from './lib/ticketing';
 import { useAuth } from './context/AuthContext';
 import { usePermissions } from './hooks/usePermissions';
 import LoginScreen from './components/LoginScreen';
@@ -58,20 +59,17 @@ export default function App() {
     availableModels, 
     fetchModels, 
     testConnection,
-    serviceNowSettings,
-    updateServiceNowSettings,
-    testServiceNowConnection,
     theme,
     setTheme,
     alertRules,
-    updateAlertRules
+    updateAlertRules,
+    ticketingSettings
   } = useAppContext();
   const [activeDashboard, setActiveDashboard] = useState<DashboardType>('executive');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [isTestingAi, setIsTestingAi] = useState(false);
-  const [isTestingSN, setIsTestingSN] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -226,7 +224,7 @@ export default function App() {
                       }}
                       className="px-4 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-lg text-xs font-bold hover:bg-amber-500 hover:text-white transition-all flex items-center gap-2"
                     >
-                      <ExternalLink size={14} /> Create ServiceNow Incident
+                      <ExternalLink size={14} /> Create {PLATFORM_INFO[ticketingSettings.platform]?.name || 'Incident'}
                     </button>
                     <button 
                       onClick={closeAiModal}
@@ -310,7 +308,7 @@ export default function App() {
         <aside 
           className={cn(
             "fixed md:sticky top-14 h-[calc(100vh-3.5rem)] border-r border-border-main bg-bg-main transition-all duration-300 z-40 overflow-hidden",
-            isSidebarOpen ? "w-64" : "w-0 md:w-16"
+            isSidebarOpen ? "w-64" : "w-16"
           )}
         >
           <nav className="p-3 flex flex-col gap-1 h-full">
@@ -319,15 +317,37 @@ export default function App() {
                 key={item.id}
                 onClick={() => setActiveDashboard(item.id as DashboardType)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all group relative",
+                  "flex items-center p-2 rounded-lg transition-all duration-200 group relative",
+                  isSidebarOpen ? "px-3 py-2.5 gap-3" : "justify-center aspect-square mx-auto w-10 h-10",
                   activeDashboard === item.id 
-                    ? "bg-inverse-bg text-inverse-text" 
+                    ? "bg-inverse-bg text-inverse-text shadow-lg shadow-inverse-bg/10" 
                     : "text-text-secondary hover:bg-border-main/50 hover:text-text-main"
                 )}
+                title={!isSidebarOpen ? item.label : undefined}
               >
-                <span className={cn("text-xs font-medium whitespace-nowrap transition-opacity", !isSidebarOpen && "md:opacity-0")}>
+                <div className="flex items-center justify-center flex-shrink-0">
+                  {isSidebarOpen ? (
+                    <item.icon size={18} className={cn(
+                      "transition-transform duration-200 group-hover:scale-110",
+                      activeDashboard === item.id ? "text-inverse-text" : "text-text-muted"
+                    )} />
+                  ) : (
+                    <span className={cn(
+                      "text-sm font-bold tracking-tighter transition-all duration-200",
+                      activeDashboard === item.id ? "text-inverse-text" : "text-blue-500"
+                    )}>
+                      {item.label[0]}
+                    </span>
+                  )}
+                </div>
+                
+                <span className={cn(
+                  "text-xs font-medium whitespace-nowrap transition-all duration-300",
+                  isSidebarOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none absolute"
+                )}>
                   {item.label}
                 </span>
+
                 {activeDashboard === item.id && isSidebarOpen && (
                   <motion.div 
                     layoutId="active-nav"
@@ -341,14 +361,23 @@ export default function App() {
               {isAdmin && (
                 <button 
                   onClick={() => setIsUserManagementOpen(true)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-text-secondary hover:bg-border-main hover:text-text-main w-full transition-all relative"
+                  className={cn(
+                    "flex items-center rounded-lg transition-all duration-200 text-text-secondary hover:bg-border-main hover:text-text-main group relative",
+                    isSidebarOpen ? "px-3 py-2.5 gap-3" : "justify-center aspect-square mx-auto w-10 h-10"
+                  )}
                 >
-                  <Users size={18} className="text-text-muted" />
-                  <span className={cn("text-xs font-medium whitespace-nowrap", !isSidebarOpen && "md:opacity-0")}>
+                  <Users size={18} className={cn("flex-shrink-0 transition-transform duration-200 group-hover:scale-110 text-text-muted")} />
+                  <span className={cn(
+                    "text-xs font-medium whitespace-nowrap transition-all duration-300",
+                    isSidebarOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none absolute"
+                  )}>
                     User Management
                   </span>
                   {pendingCount > 0 && (
-                    <span className="absolute right-2 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className={cn(
+                      "absolute flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full transition-all",
+                      isSidebarOpen ? "right-2 w-5 h-5 shadow-sm" : "-top-1 -right-1 w-4 h-4 shadow-md"
+                    )}>
                       {pendingCount}
                     </span>
                   )}
@@ -356,10 +385,18 @@ export default function App() {
               )}
               <button 
                 onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-text-secondary hover:bg-border-main hover:text-text-main w-full transition-all"
+                className={cn(
+                  "flex items-center rounded-lg transition-all duration-200 text-text-secondary hover:bg-border-main hover:text-text-main group relative",
+                  isSidebarOpen ? "px-3 py-2.5 gap-3" : "justify-center aspect-square mx-auto w-10 h-10"
+                )}
               >
-                <Settings size={18} className="text-text-muted" />
-                <span className={cn("text-xs font-medium whitespace-nowrap", !isSidebarOpen && "md:opacity-0")}>Settings</span>
+                <Settings size={18} className="flex-shrink-0 transition-transform duration-200 group-hover:scale-110 text-text-muted" />
+                <span className={cn(
+                  "text-xs font-medium whitespace-nowrap transition-all duration-300",
+                  isSidebarOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none absolute"
+                )}>
+                  Settings
+                </span>
               </button>
             </div>
           </nav>

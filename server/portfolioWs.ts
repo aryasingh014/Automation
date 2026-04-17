@@ -23,6 +23,28 @@ export function setupPortfolioWebSocket() {
   
   // Keep stateful metrics to allow graceful drifting
   const appMetricsState: Record<string, { health: number, latency: number, errorRate: number, recoveryTarget: string | null }> = {};
+  
+  // Expose restart function globally so API routes can use it
+  (global as any).restartPortfolioApp = async (appId: string) => {
+    if (appMetricsState[appId]) {
+      appMetricsState[appId].health = 100;
+      appMetricsState[appId].latency = 40;
+      appMetricsState[appId].errorRate = 0;
+      appMetricsState[appId].recoveryTarget = null;
+    } else {
+      appMetricsState[appId] = { health: 100, latency: 40, errorRate: 0, recoveryTarget: null };
+    }
+    
+    // Also clear any active alerts for this app to break the feedback loop
+    try {
+      const app = await AppRegistry.findOne({ appId });
+      if (app) {
+        await Alert.updateMany({ service: app.name, status: 'Active' }, { status: 'Resolved' });
+      }
+    } catch (e) {
+      console.error('[Portfolio WS] Restart failed to clear alerts:', e);
+    }
+  };
 
   async function loadPortfolio() {
     try {
@@ -48,7 +70,7 @@ export function setupPortfolioWebSocket() {
         }
 
         // 3. Process the drift based on the target
-        const drift = Math.random() > 0.4 ? 1 : -1;
+        const drift = Math.random() > 0.4 ? 1.5 : -1.5;
         
         if (state.recoveryTarget === 'Critical') {
             state.health = Math.max(15, state.health - (Math.random() * 8));
@@ -109,7 +131,7 @@ export function setupPortfolioWebSocket() {
           health: Math.round(state.health),
           errorRate: '0.01%',
           latency: Math.round(state.latency) + 'ms',
-          status: 'Healthy',
+          status: state.health < 80 ? (state.health < 40 ? 'Critical' : 'Warning') : 'Healthy',
           uptime: '100%',
           owner: req.owner
         };
@@ -121,8 +143,6 @@ export function setupPortfolioWebSocket() {
     }
   }
 
-  loadPortfolio();
-
   const broadcastPortfolio = async () => {
     await loadPortfolio();
     const payload = JSON.stringify({ type: 'portfolio', data: portfolioApps });
@@ -132,6 +152,17 @@ export function setupPortfolioWebSocket() {
       }
     });
   };
+
+  // One-time clear of ALL active alerts on start to "unstick" any feedback loops
+  Alert.updateMany({ status: 'Active' }, { status: 'Resolved' })
+    .then(async res => {
+      console.log(`[Portfolio WS] Unstuck ${res.modifiedCount} legacy alerts`);
+      await loadPortfolio(); // Load after clearing
+    })
+    .catch(err => {
+      console.error('[Portfolio WS] Failed to clear legacy alerts:', err);
+      loadPortfolio(); // Still try to load
+    });
 
   const intervalId = setInterval(broadcastPortfolio, 3000); 
 

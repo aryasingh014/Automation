@@ -11,12 +11,18 @@ import logRoutes from './routes/logs.js';
 import registryRoutes from './routes/registry.js';
 import infraRoutes from './routes/infra.js';
 import chatRoutes from './routes/chat.js';
+import llmUsageRoutes from './routes/llmUsage.js';
 import { setupTelemetryWebSocket } from './telemetryWs.js';
 import { setupIncidentWS } from './incidentWs.js';
 import { setupWebhookWebSocket } from './routes/webhooks.js';
 import { setupLogWebSocket } from './routes/logs.js';
 import { setupPortfolioWebSocket } from './portfolioWs.js';
 import { seedDatabase } from './seedData.js';
+import { 
+  fetchServiceNowIncidents, 
+  fetchJiraIncidents, 
+  fetchZendeskIncidents 
+} from './services/ticketingService.js';
 
 dotenv.config();
 
@@ -46,6 +52,8 @@ app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/registry', registryRoutes);
 app.use('/api/infra', infraRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/llm', llmUsageRoutes);
+
 
 app.post('/api/rum/ingest', (req, res) => {
   // Acknowledge RUM tracking data without saving to avoid 404 errors in production
@@ -53,52 +61,107 @@ app.post('/api/rum/ingest', (req, res) => {
 });
 
 app.get('/api/incidents', async (req, res) => {
-  const { SERVICENOW_INSTANCE_URL, SERVICENOW_USER, SERVICENOW_PASSWORD } = process.env;
-  console.log('[API] Fetching incidents from ServiceNow...');
-
-  if (!SERVICENOW_INSTANCE_URL || !SERVICENOW_USER || !SERVICENOW_PASSWORD) {
-    console.warn('[API] ServiceNow credentials not configured — returning empty incidents list');
-    return res.json([]);
-  }
-
+  const platform = req.query.platform || 'servicenow';
+  
   try {
-    const auth = Buffer.from(`${SERVICENOW_USER}:${SERVICENOW_PASSWORD}`).toString('base64');
-    const response = await fetch(`${SERVICENOW_INSTANCE_URL}/api/now/table/incident?sysparm_limit=10&sysparm_query=ORDERBYDESCsys_created_on&sysparm_display_value=true`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[API] ServiceNow error (${response.status}):`, errorText);
-      return res.json([]); // Return empty list instead of 500
+    let incidents = [];
+    if (platform === 'jira') {
+      console.log(`[API] Fetching incidents from Jira...`);
+      incidents = await fetchJiraIncidents();
+    } else if (platform === 'zendesk') {
+      console.log(`[API] Fetching tickets from Zendesk...`);
+      incidents = await fetchZendeskIncidents();
+    } else {
+      console.log('[API] Fetching incidents from ServiceNow...');
+      incidents = await fetchServiceNowIncidents();
     }
-
-    const data = await response.json();
-    console.log(`[API] Successfully fetched ${data.result?.length || 0} incidents`);
-    const incidents = (data.result || []).map((inc: any) => ({
-      id: inc.number,
-      number: inc.number,
-      sys_id: inc.sys_id,
-      title: inc.short_description || "No description provided",
-      priority: inc.priority || "P3",
-      status: inc.state || "New",
-      owner: inc.assigned_to?.display_value || "Unassigned",
-      age: inc.sys_created_on ? new Date(inc.sys_created_on).toLocaleString() : "Recently"
-    }));
-
-    res.json(incidents);
+    
+    res.json(incidents.map(inc => ({
+      ...inc,
+      // Map field names to what the frontend expects if they differ
+      priority: inc.priority,
+      age: inc.age,
+      owner: inc.owner
+    })));
   } catch (error: any) {
-    console.error('[API] Failed to fetch ServiceNow incidents:', error);
-    res.json([]); // Return empty list instead of 500
+    console.error(`[API] Failed to fetch ${platform} incidents:`, error);
+    res.json([]);
   }
 });
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Observability.OS API is running' });
+});
+
+// ── Ticketing Proxies ──────────────────────────────────────────────────────
+/**
+ * Generic proxy to forward requests to external ticketing platforms
+ * to bypass browser CORS restrictions.
+ */
+app.post('/api/ticketing/proxy', async (req, res) => {
+  const { url, method, headers, body } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ success: false, message: 'URL is required' });
+  }
+
+  try {
+    console.log(`[Proxy] Forwarding ${method || 'GET'} to ${url}`);
+    if (body) console.log(`[Proxy] Body:`, JSON.stringify(body, null, 2));
+
+    const response = await fetch(url, {
+      method: method || 'GET',
+      headers: {
+        ...headers,
+        'User-Agent': 'Observability OS Dashboard/1.0',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    
+    if (!response.ok) {
+      console.error(`[Proxy] Error from ${url} (${response.status}):`, JSON.stringify(data, null, 2));
+      return res.status(response.status).json(data);
+    }
+
+    res.status(response.status).json(data);
+  } catch (error: any) {
+    console.error(`[Proxy] Failed to reach ${url}:`, error.message);
+  }
+});
+
+app.get('/api/ticketing/config', (req, res) => {
+  res.json({
+    platform: 'jira',
+    jira: {
+      domain: process.env.JIRA_DOMAIN || '',
+      email: process.env.JIRA_EMAIL || '',
+      apiToken: process.env.JIRA_API_TOKEN || '',
+      projectKey: process.env.JIRA_PROJECT_KEY || '',
+      issueType: process.env.JIRA_ISSUE_TYPE || 'Task'
+    },
+    servicenow: {
+      instanceUrl: process.env.SERVICENOW_INSTANCE_URL || '',
+      user: process.env.SERVICENOW_USER || '',
+      password: process.env.SERVICENOW_PASSWORD || '',
+      autoIncidentEnabled: false
+    },
+    zendesk: {
+      subdomain: process.env.ZENDESK_SUBDOMAIN || '',
+      email: process.env.ZENDESK_EMAIL || '',
+      apiToken: process.env.ZENDESK_API_TOKEN || ''
+    }
+  });
+});
+
+app.post('/api/portfolio/restart/:appId', (req, res) => {
+  if (typeof (global as any).restartPortfolioApp === 'function') {
+    (global as any).restartPortfolioApp(req.params.appId);
+    res.json({ success: true, message: `App ${req.params.appId} restarted and healed.` });
+  } else {
+    res.status(500).json({ success: false, message: 'Restart function not bound.' });
+  }
 });
 
 // ── Ollama Proxy Routes ────────────────────────────────────────────────────

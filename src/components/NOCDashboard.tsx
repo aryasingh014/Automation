@@ -43,63 +43,42 @@ async function persistAlert(alert: { alertId: string; severity: string; service:
 
 export default function NOCDashboard() {
   const [filter, setFilter] = useState('all');
+
   const [alerts, setAlerts] = useState(initialAlerts);
   const [liveIncidents, setLiveIncidents] = useState<any[]>([]);
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true);
   const telemetry = useTelemetry(10000);
-  const { openAiModal, aiSettings, serviceNowSettings, createIncident, checkIncident, portfolioApps } = useAppContext();
+  const { openAiModal, aiSettings, ticketingSettings, createIncident, checkIncident, portfolioApps } = useAppContext();
 
-  // Generate alerts from portfolio apps
+  // Alerts are now managed by the backend or explicitly triggered to prevent feedback loops
   useEffect(() => {
-    const criticalAppsList = portfolioApps.filter(a => a.status === 'Critical');
-    const warningAppsList = portfolioApps.filter(a => a.status === 'Warning');
-    
-    if (criticalAppsList.length > 0 || warningAppsList.length > 0) {
-      // Create new alerts for critical/warning apps
-      const newAlerts: any[] = [];
-      
-      criticalAppsList.forEach(app => {
-        const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
-        const alertObj = { id: alertId, severity: 'Critical', service: app.name, message: `Health degraded to ${app.health}% - Error rate: ${app.errorRate}`, time: 'Just now', status: 'Active' };
-        newAlerts.push(alertObj);
-        persistAlert({ alertId, severity: 'Critical', service: app.name, message: alertObj.message, status: 'Active' });
-      });
-      
-      warningAppsList.slice(0, 2).forEach(app => {
-        const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
-        const alertObj = { id: alertId, severity: 'Warning', service: app.name, message: `Elevated latency ${app.latency} detected`, time: 'Just now', status: 'Active' };
-        newAlerts.push(alertObj);
-        persistAlert({ alertId, severity: 'Warning', service: app.name, message: alertObj.message, status: 'Active' });
-      });
-      
-      if (newAlerts.length > 0) {
-        setAlerts(prev => [...newAlerts, ...prev].slice(0, 10));
-      }
-    }
+    // This previously caused a feedback loop by persisting alerts back to the DB 
+    // whenever a critical app was detected, which then forced the app to stay critical.
   }, [portfolioApps]);
 
-  const fetchIncidents = async () => {
+  const fetchIncidents = useCallback(async () => {
     try {
       setIsLoadingIncidents(true);
-      const response = await fetch('/api/incidents');
+      const url = `/api/incidents?platform=${ticketingSettings.platform}`;
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch incidents');
       const data = await response.json();
       setLiveIncidents(data);
     } catch (error) {
       console.error('Incident fetch error:', error);
-      toast.error('Could not load live ServiceNow incidents.');
+      toast.error(`Could not load live ${ticketingSettings.platform === 'jira' ? 'Jira tasks' : 'ServiceNow incidents'}.`);
     } finally {
       setIsLoadingIncidents(false);
     }
-  };
+  }, [ticketingSettings.platform]);
 
   useEffect(() => {
     fetchIncidents();
     const interval = setInterval(fetchIncidents, 30000); // Refresh every 30s
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchIncidents]);
 
-// Simulate new alerts based on telemetry
+  // Simulate new alerts based on telemetry
   type AlertType = { id: string; severity: string; service: string; message: string; time: string; status: string };
   
   const autonomousTriggerRef = useRef<((alert: AlertType) => Promise<void>) | null>(null);
@@ -141,8 +120,15 @@ export default function NOCDashboard() {
     autonomousTriggerRef.current = autonomousTrigger;
   }, [autonomousTrigger]);
 
+  const lastAlertTimeRef = useRef<number>(0);
+  
   useEffect(() => {
     if (telemetry.latency > 400 || telemetry.errorRate > 0.15) {
+      const now = Date.now();
+      // Only trigger every 30s to prevent spam, or if it's the first time
+      if (now - lastAlertTimeRef.current < 30000) return;
+      
+      lastAlertTimeRef.current = now;
       const severity = 'Critical';
       const alertId = `ALR-${Math.floor(Math.random() * 9000) + 1000}`;
       const newAlert = {
@@ -159,11 +145,11 @@ export default function NOCDashboard() {
       persistAlert({ alertId, severity, service: 'Core API Hub', message: newAlert.message, status: 'Active' });
 
       // Autonomous Incident Engine
-      if (severity === 'Critical' && serviceNowSettings.autoIncidentEnabled && autonomousTriggerRef.current) {
+      if (severity === 'Critical' && ticketingSettings.servicenow.autoIncidentEnabled && autonomousTriggerRef.current) {
         autonomousTriggerRef.current(newAlert);
       }
     }
-  }, [telemetry, serviceNowSettings.autoIncidentEnabled, autonomousTrigger]);
+  }, [telemetry.latency, telemetry.errorRate, ticketingSettings.servicenow.autoIncidentEnabled, autonomousTrigger]);
 
   const handleViewLogs = async (alert: any) => {
     toast.promise(
@@ -242,7 +228,7 @@ export default function NOCDashboard() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-mono font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-              <MessageSquare size={14} /> ServiceNow Queue
+              <MessageSquare size={14} /> {ticketingSettings.platform === 'jira' ? 'Jira Queue' : 'ServiceNow Queue'}
             </h3>
             <button 
               onClick={fetchIncidents}
@@ -262,7 +248,14 @@ export default function NOCDashboard() {
               ))
             ) : liveIncidents.length > 0 ? (
 liveIncidents.map((incident) => (
-                <IncidentCard key={incident.id} incident={incident} instanceUrl={serviceNowSettings.instanceUrl} />
+                <IncidentCard 
+                  key={incident.id} 
+                  incident={incident} 
+                  platform={ticketingSettings.platform}
+                  servicenowUrl={ticketingSettings.servicenow.instanceUrl}
+                  jiraDomain={ticketingSettings.jira.domain}
+                  zendeskSubdomain={ticketingSettings.zendesk.subdomain}
+                />
               ))
             ) : (
               <div className="p-8 text-center bg-bg-surface border border-border-main border-dashed rounded-xl">
@@ -332,12 +325,20 @@ function AlertItem({ alert, onViewLogs, ...props }: any) {
   );
 }
 
-function IncidentCard({ incident, instanceUrl, ...props }: any) {
+function IncidentCard({ incident, platform, servicenowUrl, jiraDomain, zendeskSubdomain, ...props }: any) {
   const isP1 = incident.priority === 'P1';
 
-  const handleIncidentClick = () => {
-    if (instanceUrl && incident.sys_id) {
-      const baseUrl = instanceUrl.replace(/\/$/, '');
+  const handleIncidentClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (platform === 'jira' && jiraDomain) {
+      const baseUrl = jiraDomain.includes('atlassian.net') ? jiraDomain : `${jiraDomain}.atlassian.net`;
+      window.open(`https://${baseUrl}/browse/${incident.number}`, '_blank');
+    } else if (platform === 'zendesk' && zendeskSubdomain) {
+      const cleanSub = zendeskSubdomain.replace(/^https?:\/\//, '').replace(/\/$/, '').replace('.zendesk.com', '');
+      window.open(`https://${cleanSub}.zendesk.com/agent/tickets/${incident.id}`, '_blank');
+    } else if (platform === 'servicenow' && servicenowUrl && incident.sys_id) {
+      const baseUrl = servicenowUrl.replace(/\/$/, '');
       window.open(`${baseUrl}/nav_to.do?uri=incident.do?sys_id=${incident.sys_id}`, '_blank');
     }
   };

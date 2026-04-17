@@ -1,46 +1,89 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  X, 
-  Settings as SettingsIcon, 
-  Activity, 
-  Sparkles, 
-  Cloud, 
-  ChevronLeft
+import {
+  X,
+  Settings as SettingsIcon,
+  Activity,
+  Sparkles,
+  Cloud,
+  ChevronLeft,
+  Ticket,
+  MessageSquare,
+  Trello,
+  CheckCircle,
+  Database,
+  Network,
+  AlertCircle,
+  Clock,
+  User,
+  RefreshCw,
+  ExternalLink,
+  Plus,
+  Search,
+  TrendingUp
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { useAppContext, AiProvider } from '../context/AppContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { PLATFORM_INFO } from '../lib/ticketing';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = 'general' | 'ai' | 'servicenow';
+type TabId = 'general' | 'ai' | 'ticketing' | 'llm';
+
+const TICKETING_PLATFORMS = [
+  { id: 'servicenow', name: 'ServiceNow', icon: Database, description: 'Enterprise ITSM & Incident Management' },
+  { id: 'jira', name: 'Jira', icon: Trello, description: 'Dev teams, agile workflows' },
+  { id: 'zendesk', name: 'Zendesk', icon: MessageSquare, description: 'Customer support & helpdesk' },
+] as const;
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
-  const { 
-    theme, 
-    setTheme, 
-    alertRules, 
+  const {
+    theme,
+    setTheme,
+    alertRules,
     updateAlertRules,
     aiSettings,
     updateAiSettings,
     availableModels,
     fetchModels,
     testConnection,
-    serviceNowSettings,
-    updateServiceNowSettings,
-    testServiceNowConnection
+    ticketingSettings,
+    updateTicketingSettings,
+    testTicketingConnection,
+    testServiceNowConnection,
+    apiSettings,
+    updateApiSettings,
+    ticketingIncidents,
+    ticketingStats,
+    fetchTicketingIncidents,
+    llmConfigs,
+    llmProviderUsage,
+    updateLlmConfig
   } = useAppContext();
   const { isAdmin, canConfigureAlerts } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabId>('general');
   const [selectedProviderSetup, setSelectedProviderSetup] = useState<AiProvider | null>(null);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [isTestingTicketing, setIsTestingTicketing] = useState(false);
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [isTestingSN, setIsTestingSN] = useState(false);
+  const [isSavingLlm, setIsSavingLlm] = useState<string | null>(null);
+
+  const handleUpdateConfig = async (providerId: string, model: string, field: string, value: number) => {
+    setIsSavingLlm(`${providerId}-${model}`);
+    try {
+      await updateLlmConfig({ provider: providerId, model, [field]: value });
+      toast.success(`Updated ${field} for ${providerId}`);
+    } catch (e) {
+      toast.error('Failed to update config');
+    }
+    setIsSavingLlm(null);
+  };
 
   const aiProviders: { id: AiProvider; label: string }[] = [
     { id: 'openai', label: 'OpenAI' },
@@ -95,16 +138,28 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   <Sparkles size={16} className={activeTab === 'ai' ? "text-inverse-text" : "text-text-muted"} />
                   AI Intelligence
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setActiveTab('ticketing'); setSelectedProviderSetup(null); }}
+                    className={cn(
+                      "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                      activeTab === 'ticketing' ? "bg-inverse-bg text-inverse-text font-medium" : "text-text-secondary hover:bg-border-main hover:text-text-main"
+                    )}
+                  >
+                    <Ticket size={16} className={activeTab === 'ticketing' ? "text-inverse-text" : "text-text-muted"} />
+                    Ticketing & Services
+                  </button>
+                )}
                 <button
-                  onClick={() => { setActiveTab('servicenow'); setSelectedProviderSetup(null); }}
-              className={cn(
-                "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-                activeTab === 'servicenow' ? "bg-inverse-bg text-inverse-text font-medium" : "text-text-secondary hover:bg-border-main hover:text-text-main"
-              )}
-            >
-              <Cloud size={16} className={activeTab === 'servicenow' ? "text-inverse-text" : "text-text-muted"} />
-              ServiceNow Integration
-            </button>
+                  onClick={() => { setActiveTab('llm'); setSelectedProviderSetup(null); }}
+                  className={cn(
+                    "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                    activeTab === 'llm' ? "bg-inverse-bg text-inverse-text font-medium" : "text-text-secondary hover:bg-border-main hover:text-text-main"
+                  )}
+                >
+                  <TrendingUp size={16} className={activeTab === 'llm' ? "text-inverse-text" : "text-text-muted"} />
+                  LLM Quotas
+                </button>
               </>
             )}
           </nav>
@@ -228,6 +283,112 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       <p className="text-sm text-text-muted">Alert thresholds are managed by administrators only.</p>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'llm' && (
+              <div className="max-w-3xl space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                  <h3 className="text-2xl font-bold mb-2 text-purple-500 flex items-center gap-2">
+                    <TrendingUp size={24} /> LLM Quotas & Limits
+                  </h3>
+                  <p className="text-text-secondary text-sm mb-8">
+                    Configure token limits, rate limits, and monitor provider health. Limits help prevent runaway costs and API abuse.
+                  </p>
+
+                  <div className="space-y-6">
+                    {aiProviders.map((provider) => {
+                      const config = llmConfigs.find(c => c.provider === provider.id) || {
+                        tokenLimit: 0,
+                        rateLimit: 0,
+                        model: provider.id === 'openai' ? 'gpt-4o' : provider.id === 'anthropic' ? 'claude-3-sonnet' : 'default'
+                      };
+
+                      const usage = llmProviderUsage.find(u => u.provider === provider.id) || {
+                        totalInputTokens: 0,
+                        totalOutputTokens: 0,
+                        totalRequests: 0
+                      };
+
+                      const currentTokens = usage.totalInputTokens + usage.totalOutputTokens;
+                      const usagePercent = config.tokenLimit > 0 ? (currentTokens / config.tokenLimit) * 100 : 0;
+
+                      return (
+                        <div key={provider.id} className="p-6 border border-border-main rounded-2xl bg-bg-main/50 space-y-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <h4 className="font-bold text-lg capitalize">{provider.label}</h4>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20 flex items-center gap-1">
+                                <Activity size={8} className="animate-pulse" /> LIVE
+                              </span>
+                            </div>
+                            <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-500 border border-green-500/20">Active</span>
+                          </div>
+
+                          {/* Real-time Usage Bar */}
+                          {config.tokenLimit > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-text-secondary">Token Consumption</span>
+                                <span className={cn(
+                                  "font-medium",
+                                  usagePercent > 90 ? "text-red-500" : usagePercent > 70 ? "text-amber-500" : "text-green-500"
+                                )}>
+                                  {(currentTokens / 1000).toFixed(1)}k / {(config.tokenLimit / 1000).toFixed(1)}k ({usagePercent.toFixed(1)}%)
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 bg-border-main rounded-full overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${Math.min(usagePercent, 100)}%` }}
+                                  className={cn(
+                                    "h-full transition-all duration-1000",
+                                    usagePercent > 90 ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" : 
+                                    usagePercent > 70 ? "bg-amber-500" : "bg-green-500"
+                                  )}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-6">
+                            <div className="space-y-3">
+                              <label className="text-sm font-medium block">Monthly Token Limit</label>
+                              <input 
+                                type="number"
+                                value={config.tokenLimit}
+                                onChange={(e) => handleUpdateConfig(provider.id, config.model, 'tokenLimit', parseInt(e.target.value) || 0)}
+                                disabled={isSavingLlm === `${provider.id}-${config.model}`}
+                                placeholder="e.g. 1000000"
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-2 text-sm outline-none focus:border-purple-500 transition-all font-mono disabled:opacity-50"
+                              />
+                            </div>
+                            <div className="space-y-3">
+                              <label className="text-sm font-medium block">Rate Limit (RPM)</label>
+                              <input 
+                                type="number"
+                                value={config.rateLimit}
+                                onChange={(e) => handleUpdateConfig(provider.id, config.model, 'rateLimit', parseInt(e.target.value) || 0)}
+                                disabled={isSavingLlm === `${provider.id}-${config.model}`}
+                                placeholder="e.g. 3"
+                                className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-2 text-sm outline-none focus:border-purple-500 transition-all font-mono disabled:opacity-50"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-8 p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
+                    <h5 className="font-bold text-amber-500 text-sm flex items-center gap-2 mb-2">
+                      <AlertCircle size={16} /> Global Usage Note
+                    </h5>
+                    <p className="text-xs text-text-secondary leading-relaxed">
+                      Quotas are enforced at the application level. If a provider reaches its monthly limit, all subsequent AI requests for that provider will be blocked until the next billing cycle or until the limit is increased.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -675,90 +836,396 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
             )}
 
-            {activeTab === 'servicenow' && (
-              <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
-                <h3 className="text-lg font-bold mb-2">ServiceNow Integration</h3>
-                <p className="text-text-secondary text-sm mb-6">Connect Observability.OS to your ServiceNow instance to automate incident management.</p>
-                
-                <div className="space-y-6 p-6 border border-border-main rounded-2xl bg-bg-main/50">
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold block">Instance URL</label>
-                    <input 
-                      type="text"
-                      value={serviceNowSettings.instanceUrl}
-                      onChange={(e) => updateServiceNowSettings({ instanceUrl: e.target.value })}
-                      placeholder="https://devXXXXX.service-now.com"
-                      className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                    />
+
+
+            {activeTab === 'ticketing' && (
+              <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                  <h3 className="text-lg font-bold mb-2">Ticketing & Integrations</h3>
+                  <p className="text-text-secondary text-sm mb-6">Select which platform to use when creating tickets and incidents from the dashboard.</p>
+                  
+                  {/* Incident Overview Stats */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div className="bg-bg-main/50 border border-border-main rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Ticket size={16} className="text-blue-500" />
+                        <span className="text-xs text-text-muted">Total</span>
+                      </div>
+                      <p className="text-2xl font-bold">{ticketingStats.totalIncidents}</p>
+                    </div>
+                    <div className="bg-bg-main/50 border border-border-main rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle size={16} className="text-red-500" />
+                        <span className="text-xs text-text-muted">Critical</span>
+                      </div>
+                      <p className="text-2xl font-bold text-red-500">{ticketingStats.criticalIncidents}</p>
+                    </div>
+                    <div className="bg-bg-main/50 border border-border-main rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock size={16} className="text-amber-500" />
+                        <span className="text-xs text-text-muted">Open</span>
+                      </div>
+                      <p className="text-2xl font-bold text-amber-500">{ticketingStats.openIncidents}</p>
+                    </div>
+                    <div className="bg-bg-main/50 border border-border-main rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <User size={16} className="text-green-500" />
+                        <span className="text-xs text-text-muted">Assigned</span>
+                      </div>
+                      <p className="text-2xl font-bold text-green-500">{ticketingStats.myAssigned}</p>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold block">Username</label>
-                      <input 
-                        type="text"
-                        value={serviceNowSettings.user}
-                        onChange={(e) => updateServiceNowSettings({ user: e.target.value })}
-                        placeholder="admin"
-                        className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold block">Password</label>
-                      <input 
-                        type="password"
-                        value={serviceNowSettings.password}
-                        onChange={(e) => updateServiceNowSettings({ password: e.target.value })}
-                        placeholder="********"
-                        className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-blue-500/5 border border-blue-500/20 rounded-xl mt-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-bold text-blue-500 flex items-center gap-2">
-                        <Sparkles size={16} /> Autonomous Engine
-                      </h4>
-                      <button 
-                        onClick={() => updateServiceNowSettings({ autoIncidentEnabled: !serviceNowSettings.autoIncidentEnabled })}
+                  {/* Platform Selector */}
+                  <div className="space-y-3 mb-8">
+                    {TICKETING_PLATFORMS.map((platform) => (
+                      <button
+                        key={platform.id}
+                        onClick={() => updateTicketingSettings({ platform: platform.id })}
                         className={cn(
-                          "w-12 h-6 rounded-full p-1 transition-all duration-300 relative",
-                          serviceNowSettings.autoIncidentEnabled ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+                          "w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left",
+                          ticketingSettings.platform === platform.id
+                            ? "border-blue-500 bg-blue-500/10"
+                            : "border-border-main hover:border-border-hover bg-bg-main/50"
                         )}
                       >
                         <div className={cn(
-                          "w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow-sm",
-                          serviceNowSettings.autoIncidentEnabled ? "translate-x-6" : "translate-x-0"
-                        )} />
+                          "w-10 h-10 rounded-lg flex items-center justify-center",
+                          ticketingSettings.platform === platform.id ? "bg-blue-500/20 text-blue-500" : "bg-border-main text-text-muted"
+                        )}>
+                          <platform.icon size={20} />
+                        </div>
+                        <div className="flex-1">
+                          <span className="font-semibold">{platform.name}</span>
+                          <p className="text-xs text-text-muted">{platform.description}</p>
+                        </div>
+                        {ticketingSettings.platform === platform.id && (
+                          <CheckCircle size={20} className="text-blue-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Platform-specific settings */}
+                {ticketingSettings.platform === 'servicenow' && (
+                  <div className="space-y-6 p-6 border border-border-main rounded-2xl bg-bg-main/50">
+                    <h4 className="font-bold flex items-center gap-2">
+                      <Cloud size={16} className="text-[#81B5A1]" />
+                      ServiceNow Configuration
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold block">Instance URL</label>
+                        <input 
+                          type="text"
+                          value={ticketingSettings.servicenow.instanceUrl}
+                          onChange={(e) => updateTicketingSettings({ 
+                            servicenow: { ...ticketingSettings.servicenow, instanceUrl: e.target.value } 
+                          })}
+                          placeholder="https://devXXXXX.service-now.com"
+                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">Username</label>
+                          <input 
+                            type="text"
+                            value={ticketingSettings.servicenow.user}
+                            onChange={(e) => updateTicketingSettings({ 
+                              servicenow: { ...ticketingSettings.servicenow, user: e.target.value } 
+                            })}
+                            placeholder="admin"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">Password</label>
+                          <input 
+                            type="password"
+                            value={ticketingSettings.servicenow.password}
+                            onChange={(e) => updateTicketingSettings({ 
+                              servicenow: { ...ticketingSettings.servicenow, password: e.target.value } 
+                            })}
+                            placeholder="********"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-5 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-bold text-blue-500 flex items-center gap-2">
+                          <Sparkles size={16} /> Autonomous Engine
+                        </h4>
+                        <button 
+                          onClick={() => updateTicketingSettings({ 
+                            servicenow: { ...ticketingSettings.servicenow, autoIncidentEnabled: !ticketingSettings.servicenow.autoIncidentEnabled } 
+                          })}
+                          className={cn(
+                            "w-12 h-6 rounded-full p-1 transition-all duration-300 relative",
+                            ticketingSettings.servicenow.autoIncidentEnabled ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow-sm",
+                            ticketingSettings.servicenow.autoIncidentEnabled ? "translate-x-6" : "translate-x-0"
+                          )} />
+                        </button>
+                      </div>
+                      <p className="text-sm text-text-secondary leading-relaxed">
+                        Enable the Autonomous Engine to continually analyze high-risk telemetry and seamlessly generate ServiceNow incidents during critical events, avoiding manual intervention.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-border-main text-right">
+                      <button 
+                        onClick={async () => {
+                          setIsTestingSN(true);
+                          const res = await testServiceNowConnection();
+                          setIsTestingSN(false);
+                          if (res.success) {
+                            toast.success(res.message);
+                          } else {
+                            toast.error(res.message);
+                          }
+                        }}
+                        disabled={isTestingSN}
+                        className="px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                      >
+                        {isTestingSN ? 'Verifying Credentials...' : 'Test Connection'}
                       </button>
                     </div>
-                    <p className="text-sm text-text-secondary leading-relaxed">
-                      Enable the Autonomous Engine to continually analyze high-risk telemetry and seamlessly generate ServiceNow incidents during critical events, avoiding manual intervention.
-                    </p>
+                  </div>
+                )}
+
+
+                {ticketingSettings.platform === 'jira' && (
+                  <div className="space-y-6 p-6 border border-border-main rounded-2xl bg-bg-main/50">
+                    <h4 className="font-bold flex items-center gap-2">
+                      <Trello size={16} className="text-[#0052CC]" />
+                      Jira Configuration
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold block">Domain</label>
+                        <input 
+                          type="text"
+                          value={ticketingSettings.jira.domain}
+                          onChange={(e) => updateTicketingSettings({ 
+                            jira: { ...ticketingSettings.jira, domain: e.target.value } 
+                          })}
+                          placeholder="yourcompany.atlassian.net"
+                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">Email</label>
+                          <input 
+                            type="email"
+                            value={ticketingSettings.jira.email}
+                            onChange={(e) => updateTicketingSettings({ 
+                              jira: { ...ticketingSettings.jira, email: e.target.value } 
+                            })}
+                            placeholder="user@company.com"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">API Token</label>
+                          <input 
+                            type="password"
+                            value={ticketingSettings.jira.apiToken}
+                            onChange={(e) => updateTicketingSettings({ 
+                              jira: { ...ticketingSettings.jira, apiToken: e.target.value } 
+                            })}
+                            placeholder="Your Jira API token"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">Project Key</label>
+                          <input 
+                            type="text"
+                            value={ticketingSettings.jira.projectKey}
+                            onChange={(e) => updateTicketingSettings({ 
+                              jira: { ...ticketingSettings.jira, projectKey: e.target.value } 
+                            })}
+                            placeholder="PROJ"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all uppercase"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold block">Issue Type</label>
+                          <input 
+                            type="text"
+                            value={ticketingSettings.jira.issueType}
+                            onChange={(e) => updateTicketingSettings({ 
+                              jira: { ...ticketingSettings.jira, issueType: e.target.value } 
+                            })}
+                            placeholder="Task (e.g. Bug, Story)"
+                            className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border-main text-right">
+                      <button 
+                        onClick={async () => {
+                          setIsTestingTicketing(true);
+                          const res = await testTicketingConnection('jira');
+                          setIsTestingTicketing(false);
+                          if (res.success) {
+                            toast.success(res.message);
+                          } else {
+                            toast.error(res.message);
+                          }
+                        }}
+                        disabled={isTestingTicketing}
+                        className="px-6 py-3 bg-[#0052CC] text-white rounded-xl text-sm font-bold hover:bg-[#0747A6] transition-all shadow-md active:scale-95 disabled:opacity-50"
+                      >
+                        {isTestingTicketing ? 'Verifying...' : 'Test Jira Connection'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {ticketingSettings.platform === 'zendesk' && (
+                  <div className="space-y-6 p-6 border border-border-main rounded-2xl bg-bg-main/50">
+                    <h4 className="font-bold flex items-center gap-2">
+                      <MessageSquare size={16} className="text-[#03363D]" />
+                      Zendesk Configuration
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold block">Subdomain</label>
+                        <input 
+                          type="text"
+                          value={ticketingSettings.zendesk.subdomain}
+                          onChange={(e) => updateTicketingSettings({ 
+                            zendesk: { ...ticketingSettings.zendesk, subdomain: e.target.value } 
+                          })}
+                          placeholder="yourcompany"
+                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                        <p className="text-xs text-text-muted">Your Zendesk subdomain (e.g., "yourcompany" for yourcompany.zendesk.com)</p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold block">Email</label>
+                        <input 
+                          type="email"
+                          value={ticketingSettings.zendesk.email}
+                          onChange={(e) => updateTicketingSettings({ 
+                            zendesk: { ...ticketingSettings.zendesk, email: e.target.value } 
+                          })}
+                          placeholder="user@company.com"
+                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold block">API Token</label>
+                        <input 
+                          type="password"
+                          value={ticketingSettings.zendesk.apiToken}
+                          onChange={(e) => updateTicketingSettings({ 
+                            zendesk: { ...ticketingSettings.zendesk, apiToken: e.target.value } 
+                          })}
+                          placeholder="Your Zendesk API token"
+                          className="w-full bg-bg-surface border border-border-hover rounded-lg px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border-main text-right">
+                      <button 
+                        onClick={async () => {
+                          setIsTestingTicketing(true);
+                          const res = await testTicketingConnection('zendesk');
+                          setIsTestingTicketing(false);
+                          if (res.success) {
+                            toast.success(res.message);
+                          } else {
+                            toast.error(res.message);
+                          }
+                        }}
+                        disabled={isTestingTicketing}
+                        className="px-6 py-3 bg-[#03363D] text-white rounded-xl text-sm font-bold hover:bg-[#022b31] transition-all shadow-md active:scale-95 disabled:opacity-50"
+                      >
+                        {isTestingTicketing ? 'Verifying...' : 'Test Zendesk Connection'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* Incident List */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-bold flex items-center gap-2">
+                      <Ticket size={20} className="text-blue-500" />
+                      Recent {PLATFORM_INFO[ticketingSettings.platform]?.name || 'Incidents'}
+                    </h4>
+                    <button 
+                      onClick={() => fetchTicketingIncidents()}
+                      className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600"
+                    >
+                      <RefreshCw size={12} /> Refresh
+                    </button>
                   </div>
 
-                  <div className="pt-4 border-t border-border-main text-right">
-                    <button 
-                      onClick={async () => {
-                        setIsTestingSN(true);
-                        const res = await testServiceNowConnection();
-                        setIsTestingSN(false);
-                        if (res.success) {
-                          toast.success(res.message);
-                        } else {
-                          toast.error(res.message);
-                        }
-                      }}
-                      disabled={isTestingSN}
-                      className="px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 transition-all shadow-md disabled:opacity-50"
-                    >
-                      {isTestingSN ? 'Verifying Credentials...' : 'Test Connection'}
-                    </button>
+                  <div className="border border-border-main rounded-xl overflow-hidden">
+                    <div className="bg-bg-main border-b border-border-main px-4 py-2 grid grid-cols-6 gap-2 text-xs font-mono text-text-muted uppercase">
+                      <div className="col-span-1">ID</div>
+                      <div className="col-span-3">Title</div>
+                      <div className="col-span-1">Priority</div>
+                      <div className="col-span-1">Status</div>
+                    </div>
+                    <div className="divide-y divide-border-main max-h-64 overflow-y-auto">
+                      {ticketingIncidents.length > 0 ? (
+                        ticketingIncidents.slice(0, 10).map((incident) => (
+                          <div key={incident.id} className="px-4 py-3 hover:bg-bg-main/30 grid grid-cols-6 gap-2 items-center">
+                            <div className="col-span-1 text-xs font-mono text-text-secondary">
+                              {incident.number}
+                            </div>
+                            <div className="col-span-3 text-sm truncate">
+                              {incident.title}
+                            </div>
+                            <div className="col-span-1">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-mono",
+                                ['1','P1','Highest','Critical','urgent'].includes(incident.priority) ? "bg-red-500/10 text-red-500" :
+                                ['2','P2','High'].includes(incident.priority) ? "bg-amber-500/10 text-amber-500" :
+                                "bg-border-main text-text-secondary"
+                              )}>
+                                {incident.priority}
+                              </span>
+                            </div>
+                            <div className="col-span-1">
+                              <span className={cn(
+                                "text-[10px] font-mono",
+                                incident.status === 'Open' || incident.status === 'New' || incident.status === 'In Progress' ? "text-amber-500" : "text-text-secondary"
+                              )}>
+                                {incident.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-8 text-center text-text-muted text-sm">
+                          No incidents found. Configure your {PLATFORM_INFO[ticketingSettings.platform]?.name} credentials to view incidents.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            )}
+)}
           </div>
         </div>
       </motion.div>

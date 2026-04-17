@@ -1,4 +1,17 @@
-import { AiSettings } from "../context/AppContext";
+import { AiSettings, DEFAULT_LLM_PRICING } from "../context/AppContext";
+
+const DEFAULT_SYSTEM_PROMPT = `You are an Enterprise IT Operations Assistant for an Observability Platform.
+
+IMPORTANT RESPONSE RULES:
+1. Use EXACT numbers from the data provided - never guess or estimate
+2. If a value is 0, explicitly say "0" - do not say "none" or "no data"
+3. Be direct, concise, and factual - avoid fluff phrases
+4. If data is unavailable, say "No data available" - do not make up information
+5. When asked for counts/cnumbers, provide the exact count from the data
+6. Format responses clearly with bullet points for lists
+7. Always acknowledge issues explicitly when data shows problems
+
+Your role is to analyze platform metrics and provide actionable insights.`;
 
 async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000) {
   const controller = new AbortController();
@@ -16,6 +29,14 @@ async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000)
   }
 }
 
+function buildPrompt(userPrompt: string, systemPrompt: string = DEFAULT_SYSTEM_PROMPT): string {
+  return `${systemPrompt}
+
+USER QUESTION: ${userPrompt}
+
+Provide a direct, factual answer using ONLY the data provided above.`;
+}
+
 async function callOpenAI(prompt: string, settings: AiSettings) {
   const model = settings.model || "gpt-4o-mini";
   const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
@@ -26,8 +47,12 @@ async function callOpenAI(prompt: string, settings: AiSettings) {
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
+      messages: [
+        { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000
     })
   }, 60000);
 
@@ -37,7 +62,13 @@ async function callOpenAI(prompt: string, settings: AiSettings) {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  return {
+    text: data.choices[0].message.content,
+    usage: {
+      inputTokens: data.usage.prompt_tokens,
+      outputTokens: data.usage.completion_tokens
+    }
+  };
 }
 
 async function callAnthropic(prompt: string, settings: AiSettings) {
@@ -51,7 +82,9 @@ async function callAnthropic(prompt: string, settings: AiSettings) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
+      max_tokens: 2000,
+      temperature: 0.3,
+      system: DEFAULT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }]
     })
   }, 60000);
@@ -62,7 +95,13 @@ async function callAnthropic(prompt: string, settings: AiSettings) {
   }
 
   const data = await response.json();
-  return data.content[0].text;
+  return {
+    text: data.content[0].text,
+    usage: {
+      inputTokens: data.usage.input_tokens,
+      outputTokens: data.usage.output_tokens
+    }
+  };
 }
 
 async function callAzureOpenAI(prompt: string, settings: AiSettings) {
@@ -79,8 +118,12 @@ async function callAzureOpenAI(prompt: string, settings: AiSettings) {
       "api-key": settings.apiKey
     },
     body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
+      messages: [
+        { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000
     })
   }, 60000);
 
@@ -90,7 +133,13 @@ async function callAzureOpenAI(prompt: string, settings: AiSettings) {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  return {
+    text: data.choices[0].message.content,
+    usage: {
+      inputTokens: data.usage.prompt_tokens,
+      outputTokens: data.usage.completion_tokens
+    }
+  };
 }
 
 async function callOllama(prompt: string, settings: AiSettings) {
@@ -102,18 +151,33 @@ async function callOllama(prompt: string, settings: AiSettings) {
   const url = `/api/ollama/generate`;
   console.log(`[AI] Calling Ollama: ${url}`);
 
+  const model = settings.model && settings.model.includes('.') ? settings.model : "llama3.1";
+  
+  const ollamaPrompt = `${DEFAULT_SYSTEM_PROMPT}
+
+USER QUESTION: ${prompt}
+
+Answer using ONLY the data provided. Be direct and factual. If no data, say "No data available".`;
+
   let response: Response;
   try {
     response = await fetchWithTimeout(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: settings.model || "llama3",
-        prompt,
+        model,
+        prompt: ollamaPrompt,
         stream: true,
-        format: prompt.includes("JSON") ? "json" : undefined
+        options: {
+          temperature: 0.3,
+          top_p: 0.9,
+          top_k: 40,
+          num_ctx: 8192,
+          num_predict: 2048,
+        },
+        format: ollamaPrompt.includes("JSON") ? "json" : undefined
       })
-    }, 45000);
+    }, 60000);
   } catch (error: any) {
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       throw new Error(`Connection failed. Ensure Ollama is running on localhost:11434`);
@@ -132,6 +196,7 @@ async function callOllama(prompt: string, settings: AiSettings) {
   const decoder = new TextDecoder();
   let accumulated = "";
   let buffer = "";
+  let usage = { inputTokens: 0, outputTokens: 0 };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -144,12 +209,18 @@ async function callOllama(prompt: string, settings: AiSettings) {
       try {
         const chunk = JSON.parse(line);
         if (chunk.response) accumulated += chunk.response;
-        if (chunk.done) break;
+        if (chunk.done_reason === "stop" || chunk.done) {
+          usage = {
+            inputTokens: chunk.prompt_eval_count || 0,
+            outputTokens: chunk.eval_count || 0
+          };
+          break;
+        }
       } catch { }
     }
   }
 
-  return accumulated;
+  return { text: accumulated.trim(), usage };
 }
 
 async function callGroq(prompt: string, settings: AiSettings) {
@@ -162,8 +233,12 @@ async function callGroq(prompt: string, settings: AiSettings) {
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
+      messages: [
+        { role: "system", content: DEFAULT_SYSTEM_PROMPT },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 2000
     })
   }, 60000);
 
@@ -173,34 +248,81 @@ async function callGroq(prompt: string, settings: AiSettings) {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  return {
+    text: data.choices[0].message.content,
+    usage: {
+      inputTokens: data.usage.prompt_tokens,
+      outputTokens: data.usage.completion_tokens
+    }
+  };
 }
 
 async function callGemini(prompt: string, settings: AiSettings) {
-  const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(settings.apiKey);
   const modelName = settings.model || "gemini-1.5-flash";
-  const model = genAI.getGenerativeModel({ model: modelName });
+  const model = genAI.getGenerativeModel({ 
+    model: modelName,
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+    }
+  });
   
-  const result = await model.generateContent(prompt);
+  const fullPrompt = `${DEFAULT_SYSTEM_PROMPT}
+
+USER QUESTION: ${prompt}
+
+Provide a direct, factual answer using ONLY the data provided.`;
+  
+  const result = await model.generateContent(fullPrompt);
   const response = await result.response;
-  return response.text();
+  return {
+    text: response.text(),
+    usage: {
+      inputTokens: response.usageMetadata?.promptTokenCount || 0,
+      outputTokens: response.usageMetadata?.candidatesTokenCount || 0
+    }
+  };
 }
 
-export async function callAI(prompt: string, settings: AiSettings) {
+export async function callAI(prompt: string, settings: AiSettings): Promise<string> {
+  // 1. Check Quota on Backend
+  try {
+    const quotaRes = await fetch(`/api/llm/check-quota/${settings.provider}/${settings.model || 'default'}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    });
+    if (quotaRes.ok) {
+      const quota = await quotaRes.json();
+      if (!quota.allowed) {
+        throw new Error(`Quota Exceeded: ${quota.reason}`);
+      }
+    }
+  } catch (e: any) {
+    if (e.message.includes('Quota Exceeded')) throw e;
+    console.warn('[AI] Quota check failed, proceeding anyway:', e);
+  }
+
+  let result: { text: string, usage: { inputTokens: number, outputTokens: number } };
+  
   switch (settings.provider) {
     case 'openai':
-      return callOpenAI(prompt, settings);
+      result = await callOpenAI(prompt, settings);
+      break;
     case 'anthropic':
-      return callAnthropic(prompt, settings);
+      result = await callAnthropic(prompt, settings);
+      break;
     case 'azure':
-      return callAzureOpenAI(prompt, settings);
+      result = await callAzureOpenAI(prompt, settings);
+      break;
     case 'ollama':
-      return callOllama(prompt, settings);
+      result = await callOllama(prompt, settings);
+      break;
     case 'gemini':
-      return callGemini(prompt, settings);
+      result = await callGemini(prompt, settings);
+      break;
     case 'groq':
-      return callGroq(prompt, settings);
+      result = await callGroq(prompt, settings);
+      break;
     case 'bedrock':
       throw new Error("AWS Bedrock is coming soon");
     case 'vertexai':
@@ -209,6 +331,39 @@ export async function callAI(prompt: string, settings: AiSettings) {
     default:
       throw new Error(`Unknown provider: ${settings.provider}`);
   }
+
+  // Hook for usage tracking - we don't await this to avoid blocking the UI response
+  const trackUsage = async () => {
+    try {
+      const providerPricing = DEFAULT_LLM_PRICING[settings.provider] || {};
+      const pricing = providerPricing[settings.model] || providerPricing['default'] || { inputCost: 0, outputCost: 0 };
+      const inputTokens = result.usage.inputTokens || 0;
+      const outputTokens = result.usage.outputTokens || 0;
+      const costRaw = (inputTokens / 1000 * pricing.inputCost) + (outputTokens / 1000 * pricing.outputCost);
+      const cost = isNaN(costRaw) ? 0 : costRaw;
+
+      await fetch('/api/llm/usage', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          provider: settings.provider,
+          model: settings.model || 'default',
+          inputTokens,
+          outputTokens,
+          cost
+        })
+      });
+    } catch (e) {
+      console.warn('[AI] Failed to track usage:', e);
+    }
+  };
+  
+  trackUsage();
+
+  return result.text;
 }
 
 function isSimulationMode(settings: AiSettings) {
@@ -228,7 +383,9 @@ export async function analyzeIncident(serviceName: string, incidentDetails: stri
   const prompt = `You are an IT operations expert. Analyze this incident and respond ONLY with valid JSON.
 Service: "${serviceName}"
 Details: ${incidentDetails}
-Required JSON: {"analysis": "string", "recommendations": ["string", "string", "string"], "severity": "Critical|Warning|Info"}`;
+Required JSON: {"analysis": "string", "recommendations": ["string", "string", "string"], "severity": "Critical|Warning|Info"}
+
+IMPORTANT: Respond ONLY with valid JSON. No additional text.`;
 
   try {
     const text = await callAI(prompt, settings);
@@ -267,7 +424,13 @@ export async function summarizeLogs(serviceName: string, logs: string, settings:
     return "Simulation: Logs show periodic timeouts. Check network stability.";
   }
 
-  const prompt = `Summarize these logs for "${serviceName}" and identify critical errors: ${logs}`;
+  const prompt = `${DEFAULT_SYSTEM_PROMPT}
+
+Summarize these logs for service "${serviceName}" and identify critical errors:
+
+${logs}
+
+Provide a concise summary with specific error details.`;
   
   try {
     return await callAI(prompt, settings);

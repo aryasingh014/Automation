@@ -335,38 +335,28 @@ export default function ExecutiveDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-main">
-              <ImpactRow 
-                name="Warehouse Service" 
-                status="Critical" 
-                impact="Severe" 
-                risk="$$$$" 
-                statusColor="text-red-500"
-                onInvestigate={() => handleInvestigate("Warehouse Service", "Critical")}
-              />
-              <ImpactRow 
-                name="Order Processing" 
-                status="Critical" 
-                impact="High" 
-                risk="$$$" 
-                statusColor="text-red-500"
-                onInvestigate={() => handleInvestigate("Order Processing", "Critical")}
-              />
-              <ImpactRow 
-                name="Inventory API" 
-                status="Critical" 
-                impact="Medium" 
-                risk="$$" 
-                statusColor="text-red-500"
-                onInvestigate={() => handleInvestigate("Inventory API", "Critical")}
-              />
-              <ImpactRow 
-                name="Payment Gateway" 
-                status="Degraded" 
-                impact="High" 
-                risk="$$$$" 
-                statusColor="text-amber-500"
-                onInvestigate={() => handleInvestigate("Payment Gateway", "Degraded")}
-              />
+              {portfolioApps
+                .filter(a => a.status !== 'Healthy')
+                .sort((a, b) => (a.status === 'Critical' ? -1 : 1))
+                .slice(0, 5)
+                .map(app => (
+                  <ImpactRow 
+                    key={app.id}
+                    name={app.name} 
+                    status={app.status} 
+                    impact={app.status === 'Critical' ? 'Severe' : 'Medium'} 
+                    risk={app.status === 'Critical' ? '$$$$' : '$$'} 
+                    statusColor={app.status === 'Critical' ? 'text-red-500' : 'text-amber-500'}
+                    onInvestigate={() => handleInvestigate(app.name, app.status)}
+                  />
+                ))}
+              {portfolioApps.filter(a => a.status !== 'Healthy').length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-text-muted font-mono uppercase">
+                    All core services performing within SLA parameters
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -176,12 +176,39 @@ function generateSmartResponse(question: string, stats: any, systemPrompt: strin
     return ' No recent incidents found.';
   }
 
+  if (q.includes('hello') || q.includes('hi ') || q === 'hi' || q.includes('hey')) {
+    return ` **Hello!** I'm your Universal IT Operations Assistant.\n\nI can help you analyze data from **ServiceNow**, **Jira**, **Zendesk**, and **AWS Infrastructure**.\n\nCurrently, I see:\n• **${stats.totalIncidents ?? 0}** total incidents/tickets\n• **${stats.criticalAlerts ?? 0}** critical issues\n• **${stats.activeConnectors?.join(', ') || 'Local DB'}** active connectors\n\nWhat can I help you with today?`;
+  }
+
+  if (q.includes('jira')) {
+    const jiraTickets = stats.recentIncidents?.filter((i: any) => i.platform?.toLowerCase() === 'jira') || [];
+    if (jiraTickets.length > 0) {
+      return ` **Jira Status**\n\nI found **${jiraTickets.length}** recent Jira issues.\n\n${jiraTickets.slice(0, 5).map((i: any) => `  • ${i.number}: ${i.title} (${i.status})`).join('\n')}`;
+    }
+    return ' I couldn\'t find any recent Jira tickets in the current sync data.';
+  }
+
+  if (q.includes('zendesk')) {
+    const zdTickets = stats.recentIncidents?.filter((i: any) => i.platform?.toLowerCase() === 'zendesk') || [];
+    if (zdTickets.length > 0) {
+      return ` **Zendesk Status**\n\nI found **${zdTickets.length}** recent Zendesk tickets.\n\n${zdTickets.slice(0, 5).map((i: any) => `  • ${i.number}: ${i.title} (${i.status})`).join('\n')}`;
+    }
+    return ' No Zendesk tickets found in the latest data sync.';
+  }
+
+  if (q.includes('aws') || q.includes('infra') || q.includes('server') || q.includes('host')) {
+    if (stats.infraStats) {
+      return ` **Infrastructure Health (AWS)**\n\n• Total Hosts: **${stats.infraStats.total}**\n• Healthy: **${stats.infraStats.healthy}**\n• Degraded: **${stats.infraStats.degraded}**\n• Down/Critical: **${stats.infraStats.down}**\n\nAll infrastructure data is being pulled from CloudWatch metrics.`;
+    }
+    return ' Infrastructure monitoring (AWS CloudWatch) is not currently configured. Please check your .env settings.';
+  }
+
   if (q.includes('help') || q.includes('what can') || q.includes('capability')) {
-    return ` **Platform Assistant Capabilities**\n\nI can help you with:\n\n• **Incidents** — "How many incidents today?" / "Show recent incidents"\n• **Alerts** — "How many critical alerts?" / "What alerts are active?"\n• **Apps** — "List all connected applications" / "Which apps are down?"\n• **Notifications** — "How many notifications sent?" / "Show notification status"\n• **Platform Health** — "What is the platform health status?"\n• **Common Issues** — "What are the most common issues?"\n• **Troubleshooting** — "How do I fix a database timeout?"\n\n Tip: Configure an AI provider in Settings for richer, context-aware answers.`;
+    return ` **Platform Assistant Capabilities**\n\nI can help you with:\n\n• **Universal Search** — "Show all incidents from all platforms"\n• **Jira Tasks** — "What are my current Jira tickets?"\n• **Zendesk Support** — "Are there any open Zendesk tickets?"\n• **Infra Health** — "What is our AWS infrastructure status?"\n• **ServiceNow** — "List latest ServiceNow incidents"\n\n Tip: Configure an AI provider (Gemini, Ollama) in Settings for deep analysis.`;
   }
 
   // Fallback: return a summary of the current platform state
-  return ` **Platform Overview** (for: "${question}")\n\n• Incidents Today: ${stats.incidentsToday ?? 0}\n• Incidents This Week: ${stats.incidentsThisWeek ?? 0}\n• Active Alerts: ${stats.activeAlerts ?? 0}\n• Critical Alerts: ${stats.criticalAlerts ?? 0}\n\n For more detailed AI-powered analysis, configure an AI provider (Groq, OpenAI, Gemini, etc.) in Settings.`;
+  return ` **Universal Platform Overview** (for: "${question}")\n\n• Total Incidents: ${stats.totalIncidents ?? 0}\n• Critical Issues: ${stats.criticalAlerts ?? 0}\n• Active Connectors: ${stats.activeConnectors?.join(', ') || 'Local DB'}\n\n For more detailed AI-powered analysis, ensure your AI Provider is correctly configured in Settings.`;
 }
 
 interface Message {
@@ -202,6 +229,8 @@ interface ChatStats {
   connectedApps?: { name: string; status: string; category: string; incidentCount: number }[];
   notificationsSent?: number;
   notificationsFailed?: number;
+  infraStats?: { total: number; healthy: number; degraded: number; down: number };
+  activeConnectors: string[];
   dataSource?: string;
 }
 
@@ -266,7 +295,10 @@ export default function PlatformChatbot({ forceFullscreen = false, onNavigateAwa
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ 
+          question: text,
+          messages: messages.slice(-6).map(m => ({ role: m.role, content: m.content })) 
+        })
       });
 
       if (!response.ok) {
@@ -316,7 +348,10 @@ export default function PlatformChatbot({ forceFullscreen = false, onNavigateAwa
         setStats(data.stats);
       }
 
-      const combinedPrompt = `${data.systemPrompt}\n\n${data.userPrompt}`;
+      // Format conversation history for the AI prompt
+      const historyText = messages.slice(-5).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+      const combinedPrompt = `${data.systemPrompt}\n\nCONVERSATION HISTORY:\n${historyText}\n\nUSER: ${text}\n\n${data.userPrompt}`;
+      
       let aiResponseText: string | null = null;
       let usedFallback = false;
 
@@ -432,10 +467,10 @@ export default function PlatformChatbot({ forceFullscreen = false, onNavigateAwa
           <div>
             <h3 className={cn("font-bold", showFullscreen ? "text-lg" : "text-sm")}>Platform Assistant</h3>
             <p className={cn("text-white/70", showFullscreen ? "text-sm" : "text-xs")}>
-              {aiSource === 'data' ? ' Data-Driven Mode'
-                : aiSource === 'gemini' ? ' Gemini AI'
+              {aiSource === 'data' ? ' Universal Data Mode'
+                : aiSource === 'gemini' ? ' Gemini AI (Multi-Source)'
                 : aiSource ? ` ${aiSource.charAt(0).toUpperCase() + aiSource.slice(1)} AI`
-                : ` ${aiSettings.provider.charAt(0).toUpperCase() + aiSettings.provider.slice(1)} · Ready`}
+                : ` ${aiSettings.provider.charAt(0).toUpperCase() + aiSettings.provider.slice(1)} · Universal`}
             </p>
           </div>
         </div>
@@ -462,13 +497,24 @@ export default function PlatformChatbot({ forceFullscreen = false, onNavigateAwa
 
       {/* Stats Bar */}
       {stats && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-bg-surface border-b border-border-main overflow-x-auto">
+        <div className="flex items-center gap-2 px-4 py-2 bg-bg-surface border-b border-border-main overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 whitespace-nowrap">
-            <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", stats.dataSource === 'servicenow' ? "bg-green-500" : "bg-amber-500")} />
+            <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", stats.dataSource === 'universal' ? "bg-blue-500" : "bg-green-500")} />
             <span className="text-[9px] font-bold font-mono tracking-tighter text-text-main uppercase">
-              {stats.dataSource === 'servicenow' ? 'REAL-TIME DATA' : 'SYNCED DATA'}
+              {stats.dataSource === 'universal' ? 'UNIVERSAL SYNC' : 'LOCAL CACHE'}
             </span>
           </div>
+          
+          {stats.activeConnectors?.map(connector => (
+             <div key={connector} className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-500/10 border border-slate-500/20 whitespace-nowrap">
+                <span className="text-[9px] font-bold font-mono tracking-tighter text-text-muted uppercase">
+                  {connector}
+                </span>
+             </div>
+          ))}
+
+          <div className="h-4 w-px bg-border-main mx-1" />
+
           <div className="flex items-center gap-1.5 text-[10px] font-mono">
             <Zap size={10} className="text-amber-500" />
             <span className="text-text-main">{stats.incidentsToday} incidents</span>
@@ -477,20 +523,11 @@ export default function PlatformChatbot({ forceFullscreen = false, onNavigateAwa
             <AlertTriangle size={10} className="text-red-500" />
             <span className="text-text-main">{stats.criticalAlerts} critical</span>
           </div>
-          <div className="flex items-center gap-1.5 text-[10px] font-mono">
-            <Activity size={10} className="text-amber-500" />
-            <span className="text-text-main">{stats.activeAlerts} alerts</span>
-          </div>
-          {(stats.connectedApps?.length ?? 0) > 0 && (
+
+          {stats.infraStats && (
             <div className="flex items-center gap-1.5 text-[10px] font-mono">
-              <Smartphone size={10} className="text-blue-500" />
-              <span className="text-text-main">{stats.connectedApps?.length ?? 0} apps</span>
-            </div>
-          )}
-          {(stats.notificationsSent ?? 0) > 0 && (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono">
-              <Mail size={10} className="text-green-500" />
-              <span className="text-text-main">{stats.notificationsSent} sent</span>
+              <Server size={10} className="text-purple-500" />
+              <span className="text-text-main">{stats.infraStats.total} hosts</span>
             </div>
           )}
         </div>

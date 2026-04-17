@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, Users, Check, XCircle, Clock, Trash2, UserPlus, FolderKanban } from 'lucide-react';
+import { X, Users, Check, XCircle, Clock, Trash2, UserPlus, FolderKanban, Sparkles, TrendingUp, DollarSign, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { useAppContext } from '../context/AppContext';
 import { cn } from '../lib/utils';
 
 interface User {
@@ -32,7 +33,136 @@ interface UserManagementPanelProps {
   onClose: () => void;
 }
 
-type TabId = 'pending' | 'approved' | 'rejected' | 'onboarding';
+type TabId = 'pending' | 'approved' | 'rejected' | 'onboarding' | 'llm';
+
+function LlmUsageDashboard() {
+  const { llmProviderUsage, llmUserUsage, fetchLlmUsage } = useAppContext();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      await fetchLlmUsage();
+      setLoading(false);
+    };
+    load();
+  }, [fetchLlmUsage]);
+
+  const totalCost = llmProviderUsage.reduce((sum, p) => sum + p.totalCost, 0);
+  const totalTokens = llmProviderUsage.reduce((sum, p) => sum + p.totalInputTokens + p.totalOutputTokens, 0);
+  const totalRequests = llmProviderUsage.reduce((sum, p) => sum + p.totalRequests, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+      <div>
+        <h3 className="text-2xl font-bold mb-2">LLM Usage Analysis</h3>
+        <p className="text-text-secondary text-sm mb-6">Monitor token consumption and costs across all AI providers and users.</p>
+        
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-bg-main/50 border border-border-main rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">
+                <DollarSign size={20} />
+              </div>
+              <span className="text-sm font-medium text-text-muted">Total Cost</span>
+            </div>
+            <p className="text-3xl font-bold">${totalCost.toFixed(4)}</p>
+            <p className="text-xs text-green-500 mt-2 flex items-center gap-1">
+              <TrendingUp size={12} /> +12% from last month
+            </p>
+          </div>
+          
+          <div className="bg-bg-main/50 border border-border-main rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-500/10 text-purple-500 rounded-lg">
+                <Cpu size={20} />
+              </div>
+              <span className="text-sm font-medium text-text-muted">Total Tokens</span>
+            </div>
+            <p className="text-3xl font-bold">{(totalTokens / 1000).toFixed(1)}k</p>
+            <p className="text-xs text-text-muted mt-2">Input + Output</p>
+          </div>
+
+          <div className="bg-bg-main/50 border border-border-main rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg">
+                <Sparkles size={20} />
+              </div>
+              <span className="text-sm font-medium text-text-muted">Total Requests</span>
+            </div>
+            <p className="text-3xl font-bold">{totalRequests}</p>
+            <p className="text-xs text-text-muted mt-2">All-time across platform</p>
+          </div>
+        </div>
+
+        {/* Providers Table */}
+        <h4 className="text-lg font-bold mb-4">Provider Breakdown</h4>
+        <div className="border border-border-main rounded-xl overflow-hidden mb-8">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-bg-main border-b border-border-main">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Provider/Model</th>
+                <th className="px-4 py-3 font-semibold text-right">Requests</th>
+                <th className="px-4 py-3 font-semibold text-right">Tokens</th>
+                <th className="px-4 py-3 font-semibold text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {llmProviderUsage.map((p, i) => (
+                <tr key={i} className="border-b border-border-main last:border-0 hover:bg-bg-main/30 transition-colors">
+                  <td className="px-4 py-3 font-medium">
+                    <span className="capitalize">{p.provider}</span>
+                    <span className="text-text-muted ml-2 text-xs">({p.model})</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">{p.totalRequests}</td>
+                  <td className="px-4 py-3 text-right">{((p.totalInputTokens + p.totalOutputTokens) / 1000).toFixed(1)}k</td>
+                  <td className="px-4 py-3 text-right font-medium">${p.totalCost.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Users Table */}
+        <h4 className="text-lg font-bold mb-4">Usage by User</h4>
+        <div className="border border-border-main rounded-xl overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-bg-main border-b border-border-main">
+              <tr>
+                <th className="px-4 py-3 font-semibold">User</th>
+                <th className="px-4 py-3 font-semibold">Provider</th>
+                <th className="px-4 py-3 font-semibold text-right">Requests</th>
+                <th className="px-4 py-3 font-semibold text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {llmUserUsage.map((u, i) => (
+                <tr key={i} className="border-b border-border-main last:border-0 hover:bg-bg-main/30 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{u.userName}</div>
+                    <div className="text-[10px] text-text-muted">{u.email}</div>
+                  </td>
+                  <td className="px-4 py-3 capitalize text-xs">{u.provider} ({u.model})</td>
+                  <td className="px-4 py-3 text-right">{u.requests}</td>
+                  <td className="px-4 py-3 text-right font-medium">${u.cost.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function UserManagementPanel({ onClose }: UserManagementPanelProps) {
   const { token } = useAuth();
@@ -287,6 +417,15 @@ export default function UserManagementPanel({ onClose }: UserManagementPanelProp
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab('llm')}
+              className={cn(
+                "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                activeTab === 'llm' ? "bg-inverse-bg text-inverse-text font-medium" : "text-text-secondary hover:bg-border-main hover:text-text-main"
+              )}
+            >
+              <Sparkles size={16} /> LLM Usage
+            </button>
           </nav>
         </div>
 
@@ -299,7 +438,9 @@ export default function UserManagementPanel({ onClose }: UserManagementPanelProp
 
           <div className="flex-1 overflow-y-auto p-8">
             <div className="max-w-3xl">
-              {activeTab === 'onboarding' ? (
+              {activeTab === 'llm' ? (
+                <LlmUsageDashboard />
+              ) : activeTab === 'onboarding' ? (
                 <>
                   <h3 className="text-2xl font-bold mb-6">Onboarding Requests</h3>
                   {loading ? (

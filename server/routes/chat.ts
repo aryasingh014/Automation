@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect, AuthRequest } from '../middleware/authMiddleware.js';
-import { Telemetry, Alert, Incident, AuditLog, CustomDashboard, AppRegistry, Notification } from '../models/Telemetry.js';
+import { Alert } from '../models/Telemetry.js';
 import {
   getIncidentsFromLocalDB,
   getAppsFromLocalDB,
@@ -8,6 +8,8 @@ import {
   syncIncidentsFromServiceNow,
   startPeriodicSync
 } from '../services/syncService.js';
+import { fetchAllIncidents, IncidentData } from '../services/ticketingService.js';
+import { getAllEC2Instances, isAWSConfigured } from '../infraMonitor.js';
 
 const router = express.Router();
 
@@ -26,160 +28,129 @@ interface PlatformStats {
   frequentlyDownApps: { name: string; failureCount: number }[];
   avgResolutionTime: string;
   topSeverities: { severity: string; count: number }[];
-  recentIncidents: { number: string; title: string; severity: string; status: string; createdAt: Date; serviceName: string; rootCause?: string }[];
+  recentIncidents: { number: string; title: string; severity: string; status: string; createdAt: string; serviceName: string; rootCause?: string; platform: string }[];
   connectedApps: { name: string; status: string; category: string; incidentCount: number }[];
   notificationsSent: number;
   notificationsFailed: number;
-  dataSource: 'local' | 'servicenow';
+  infraStats?: { total: number; healthy: number; degraded: number; down: number };
+  dataSource: 'local' | 'universal';
+  activeConnectors: string[];
   lastSyncAt: Date;
 }
 
 async function getPlatformStats(): Promise<PlatformStats> {
-  const emptyStats: PlatformStats = {
-    incidentsToday: 0,
-    incidentsThisWeek: 0,
-    incidentsThisMonth: 0,
-    totalIncidents: 0,
-    activeAlerts: 0,
-    criticalAlerts: 0,
-    warningAlerts: 0,
-    servicesWithIssues: [],
-    commonIssues: [],
-    frequentlyDownApps: [],
-    avgResolutionTime: 'N/A',
-    topSeverities: [],
-    recentIncidents: [],
-    connectedApps: [],
-    notificationsSent: 0,
-    notificationsFailed: 0,
-    dataSource: 'local',
-    lastSyncAt: new Date()
-  };
-
-  let localData: any = { incidents: [], total: 0, stats: { today: 0, thisWeek: 0, thisMonth: 0, critical: 0, bySeverity: {}, byService: {}, byStatus: {} } };
+  let localIncidents: any = { incidents: [], total: 0, stats: { today: 0, thisWeek: 0, thisMonth: 0, critical: 0, bySeverity: {}, byService: {}, byStatus: {} } };
   let appsData: any = { apps: [], total: 0, stats: { total: 0, active: 0, degraded: 0, down: 0, byCategory: {} } };
   let notifData: any = { notifications: [], total: 0, stats: { sent: 0, failed: 0, byType: {} } };
   let activeAlerts = 0, criticalAlertsCount = 0, warningAlertsCount = 0;
 
-  // 1. Fetch Local Data
+  // 1. Fetch Local DB Data
   try { 
-    const result = await getIncidentsFromLocalDB({ limit: 50 });
-    localData = result || localData;
-  } catch (e) { console.warn('[Chat] DB unavailable for incidents:', (e as any)?.message); }
-  
-  try { 
-    const result = await getAppsFromLocalDB();
-    appsData = result || appsData;
-  } catch (e) { console.warn('[Chat] DB unavailable for apps:', (e as any)?.message); }
-  
-  try { 
-    const result = await getNotificationsFromLocalDB({ limit: 100 });
-    notifData = result || notifData;
-  } catch (e) { console.warn('[Chat] DB unavailable for notifications:', (e as any)?.message); }
-  
-  try {
-    const alertCount = await Alert?.countDocuments?.({ status: 'Active' });
-    activeAlerts = typeof alertCount === 'number' ? alertCount : 0;
-    const critCount = await Alert?.countDocuments?.({ status: 'Active', severity: 'Critical' });
-    criticalAlertsCount = typeof critCount === 'number' ? critCount : 0;
-    const warnCount = await Alert?.countDocuments?.({ status: 'Active', severity: 'Warning' });
-    warningAlertsCount = typeof warnCount === 'number' ? warnCount : 0;
-  } catch (e) {
-    console.warn('[Chat] DB unavailable for alerts:', (e as any)?.message);
-  }
+    localIncidents = await getIncidentsFromLocalDB({ limit: 50 }) || localIncidents;
+    appsData = await getAppsFromLocalDB() || appsData;
+    notifData = await getNotificationsFromLocalDB({ limit: 100 }) || notifData;
+    
+    const [alertCount, critCount, warnCount] = await Promise.all([
+      Alert?.countDocuments?.({ status: 'Active' }),
+      Alert?.countDocuments?.({ status: 'Active', severity: 'Critical' }),
+      Alert?.countDocuments?.({ status: 'Active', severity: 'Warning' })
+    ]);
+    activeAlerts = Number(alertCount) || 0;
+    criticalAlertsCount = Number(critCount) || 0;
+    warningAlertsCount = Number(warnCount) || 0;
+  } catch (e) { console.warn('[Chat] DB fetch error:', (e as any)?.message); }
 
-  // 2. Try Real-time ServiceNow Fetch (Live Data Override)
-  let dataSource: 'local' | 'servicenow' = 'local';
-  let liveIncidentsResponse: any = null;
+  // 2. Fetch Live Connector Data (Universal)
+  let universalIncidents: IncidentData[] = [];
+  let activeConnectors: string[] = ['Local Database'];
   
   try {
-    const { SERVICENOW_INSTANCE_URL, SERVICENOW_USER, SERVICENOW_PASSWORD } = process.env;
-    if (SERVICENOW_INSTANCE_URL && SERVICENOW_USER && SERVICENOW_PASSWORD) {
-      console.log('[Chat] Fetching LIVE ServiceNow stats...');
-      liveIncidentsResponse = await fetchIncidentsFromServiceNow();
-      if (liveIncidentsResponse && (liveIncidentsResponse.today > 0 || liveIncidentsResponse.all.length > 0)) {
-        dataSource = 'servicenow';
-      }
+    universalIncidents = await fetchAllIncidents();
+    if (universalIncidents.length > 0) {
+      const platforms = [...new Set(universalIncidents.map(i => i.platform))];
+      activeConnectors.push(...platforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)));
     }
   } catch (e) {
-    console.warn('[Chat] Live ServiceNow fetch failed, falling back to local DB:', (e as any)?.message);
+    console.warn('[Chat] Multi-connector fetch failed:', (e as any)?.message);
   }
 
-  const incidents = dataSource === 'servicenow' ? liveIncidentsResponse.all : (localData?.incidents || []);
-  const stats = localData?.stats || { today: 0, thisWeek: 0, thisMonth: 0, critical: 0, bySeverity: {}, byService: {}, byStatus: {} };
-
-  // Use LIVE counts if available, otherwise fallback to local stats
-  const incidentsToday = dataSource === 'servicenow' ? liveIncidentsResponse.today : stats.today;
-  const incidentsThisWeek = dataSource === 'servicenow' ? liveIncidentsResponse.week : stats.thisWeek;
-
-  let criticalAlertCount = criticalAlertsCount;
-  let warningAlertCount = warningAlertsCount;
-  let activeAlertCount = activeAlerts;
-
-  if (activeAlerts === 0 && incidents.length > 0) {
-    activeAlertCount = incidents.filter((i: any) => 
-      ['New', 'In Progress', 'Assigned', 'Pending'].includes(i.status)
-    ).length;
-    criticalAlertCount = stats.critical;
-    warningAlertCount = incidents.filter((i: any) => 
-      i.severity === 'P2' || i.severity === '2'
-    ).length;
+  // 3. Fetch Infrastructure Stats
+  let infraStats = undefined;
+  if (isAWSConfigured()) {
+    try {
+      const instances = await getAllEC2Instances();
+      infraStats = {
+        total: instances.length,
+        healthy: instances.filter((i: any) => i.status === 'healthy' || i.state === 'running').length,
+        degraded: instances.filter((i: any) => i.status === 'degraded').length,
+        down: instances.filter((i: any) => i.status === 'down' || i.state === 'stopped').length
+      };
+      activeConnectors.push('AWS CloudWatch');
+    } catch (e) { console.warn('[Chat] Infra stats fetch failed'); }
   }
 
-  const servicesWithIssues: string[] = Array.from(new Set(
+  // Combine data
+  const incidents = universalIncidents.length > 0 ? universalIncidents : localIncidents.incidents;
+  const stats = localIncidents.stats;
+
+  // Recalculate context-aware counts
+  const incidentsToday = universalIncidents.length > 0 
+    ? universalIncidents.filter(i => {
+        const d = new Date(i.createdAt);
+        return d.toDateString() === new Date().toDateString();
+      }).length 
+    : stats.today;
+
+  const incidentsThisWeek = universalIncidents.length > 0
+    ? universalIncidents.filter(i => {
+        const d = new Date(i.createdAt);
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return d >= weekAgo;
+      }).length
+    : stats.thisWeek;
+
+  const servicesWithIssues = Array.from(new Set(
     incidents
-      .filter((i: any) => i.severity === 'P1' || i.severity === 'Critical')
+      .filter((i: any) => ['P1', 'Critical', 'high', '1'].includes(String(i.severity)))
       .map((i: any) => i.serviceName)
-      .filter(Boolean)
-  )).slice(0, 10) as string[];
+  )).slice(0, 10);
 
   const commonIssues = Object.entries(stats.byService)
-    .map(([service, count]) => ({ service, count: count as number }))
+    .map(([service, count]) => ({ service, count: Number(count) }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-
-  const topSeverities = Object.entries(stats.bySeverity)
-    .map(([severity, count]) => ({ severity, count: count as number }))
-    .sort((a, b) => b.count - a.count);
-
-  const resolvedIncidents = incidents.filter((i: any) => 
-    ['Resolved', 'Closed'].includes(i.status)
-  );
-  const avgResolutionHours = resolvedIncidents.length > 0 ? `${resolvedIncidents.length} resolved` : 'N/A';
-
-  const connectedApps = (appsData?.apps || []).slice(0, 10).map((app: any) => ({
-    name: app.name,
-    status: app.status,
-    category: app.category,
-    incidentCount: app.incidentCount
-  }));
+    .slice(0, 5);
 
   return {
     incidentsToday,
     incidentsThisWeek,
     incidentsThisMonth: stats.thisMonth,
     totalIncidents: incidents.length,
-    activeAlerts: activeAlertCount,
-    criticalAlerts: criticalAlertCount,
-    warningAlerts: warningAlertCount,
-    servicesWithIssues,
+    activeAlerts: activeAlerts || incidents.length,
+    criticalAlerts: criticalAlertsCount || incidents.filter((i: any) => String(i.severity).includes('1') || String(i.severity).toLowerCase().includes('crit')).length,
+    warningAlerts: warningAlertsCount,
+    servicesWithIssues: servicesWithIssues as string[],
     commonIssues,
     frequentlyDownApps: [],
-    avgResolutionTime: avgResolutionHours,
-    topSeverities,
-    recentIncidents: incidents.slice(0, 10).map((i: any) => ({
+    avgResolutionTime: 'N/A',
+    topSeverities: Object.entries(stats.bySeverity).map(([severity, count]) => ({ severity, count: Number(count) })),
+    recentIncidents: incidents.slice(0, 15).map((i: any) => ({
       number: i.number,
       title: i.title,
-      severity: i.severity,
+      severity: i.priority || i.severity,
       status: i.status,
       createdAt: i.createdAt,
       serviceName: i.serviceName,
-      rootCause: i.rootCause
+      platform: i.platform || 'Local'
     })),
-    connectedApps,
-    notificationsSent: notifData?.stats?.sent || 0,
-    notificationsFailed: notifData?.stats?.failed || 0,
-    dataSource,
+    connectedApps: (appsData.apps || []).slice(0, 50).map((a: any) => ({
+      name: a.name, status: a.status, category: a.category, incidentCount: a.incidentCount
+    })),
+    notificationsSent: notifData.stats?.sent || 0,
+    notificationsFailed: notifData.stats?.failed || 0,
+    infraStats,
+    dataSource: universalIncidents.length > 0 ? 'universal' : 'local',
+    activeConnectors,
     lastSyncAt: new Date()
   };
 }
@@ -322,10 +293,10 @@ router.post('/sync', async (req: AuthRequest, res) => {
 
 router.post('/ask', async (req: AuthRequest, res) => {
   try {
-    const { question, context } = req.body;
+    const { question, messages = [], context } = req.body;
     
-    if (!question || typeof question !== 'string') {
-      res.status(400).json({ error: 'Question is required' });
+    if (!question && messages.length === 0) {
+      res.status(400).json({ error: 'Question or messages are required' });
       return;
     }
 
@@ -334,53 +305,44 @@ router.post('/ask', async (req: AuthRequest, res) => {
     const healthStatus = stats.criticalAlerts > 0 || stats.incidentsToday > 5 ? 'CRITICAL' : 
                          stats.warningAlerts > 0 || stats.incidentsThisWeek > 10 ? 'DEGRADED' : 'HEALTHY';
     
-    const systemPrompt = `You are an IT Operations Expert Assistant for an Enterprise Observability Platform. Your job is to analyze REAL platform data and provide accurate, actionable answers.
+    const systemPrompt = `You are the "Universal Service Intelligence Assistant" for an Enterprise IT Observability Platform. 
+    
+    IDENTITY & MISSION:
+    - You are an expert Senior Site Reliability Engineer (SRE).
+    - Your goal is to monitor, analyze, and troubleshoot the "Application Portfolio" (Services like Inventory API, Auth Service, etc.).
+    - You use data synced from ServiceNow, Jira, and AWS Infrastructure to provide deep insights into these services.
 
- IMPORTANT: You must base your response ONLY on the actual numeric values provided below. NEVER guess or estimate.
+    KNOWLEDGE & DATA SOURCES:
+    - PLATFORMS: ServiceNow (Incidents), Jira (Tasks), AWS (Metrics/Health).
+    - SERVICES: Detailed health data for each service (Inventory API, Authentication, etc.).
+    - TELEMETRY: Real-time stats on latency, CPU, and alerts.
 
- PLATFORM DATA (FROM REAL-TIME SOURCE):
-- Total Incidents: ${stats.totalIncidents}  ← USE THIS EXACT NUMBER for general incident count
-- Incidents Today: ${stats.incidentsToday}  ← USE THIS EXACT NUMBER for today
-- Incidents This Week: ${stats.incidentsThisWeek}
-- Active Alerts: ${stats.activeAlerts}
-- Critical Alerts: ${stats.criticalAlerts}  ← USE THIS EXACT NUMBER
-- Warning Alerts: ${stats.warningAlerts}
-- Avg Resolution: ${stats.avgResolutionTime}
+    ADVISORY CAPABILITIES:
+    - You ARE allowed and encouraged to provide general IT troubleshooting advice (e.g., "To fix a memory leak, check your garbage collection settings" or "High latency on an API usually suggests database contention").
+    - Be proactive: if a service is down, suggest likely causes and technical fixes.
 
- CURRENT PLATFORM HEALTH: ${healthStatus}
+    CONNECTED PLATFORMS: ${stats.activeConnectors.join(', ')}
 
-${stats.servicesWithIssues.length > 0 ? ` SERVICES NEEDING ATTENTION:
-${stats.servicesWithIssues.map(s => `  • ${s}`).join('\n')}` : ' No services currently flagged'}
+    APP REGISTRY (SERVIC-CENTRIC DATA):
+    ${stats.connectedApps.map(a => `- ${a.name} [${a.category.toUpperCase()}]: Status: ${a.status.toUpperCase()}, Incidents: ${a.incidentCount}`).join('\n')}
 
-${stats.commonIssues.length > 0 ? ` TOP ISSUES BY FREQUENCY:
-${stats.commonIssues.slice(0,5).map(c => `  • ${c.service}: ${c.count} alerts`).join('\n')}` : ' No recurring issues detected'}
+    LATEST INCIDENTS (CROSS-PLATFORM):
+    ${stats.recentIncidents.slice(0,10).map(i => `• [${i.platform}] [${i.severity}] ${i.number}: ${i.title} (${i.status})`).join('\n')}
 
-${stats.recentIncidents.length > 0 ? ` RECENT INCIDENTS:
-${stats.recentIncidents.slice(0,5).map(i => `  • [${i.severity}] ${i.number}: ${i.title} (${i.status})`).join('\n')}` : ' No recent incidents on record'}
+    RECOVERY RULES:
+    1. Focus on the SERVICES first. Use the platform data to explain service health.
+    2. Understand common industry shortforms: "SNow" (ServiceNow), "ZD" (Zendesk), "CW" (CloudWatch), "P1/Sev1" (Critical incidents).
+    3. If asked about a greeting (hi, hello), be friendly but stay professional and mention a quick summary of current service health.
+    4. If asked something completely outside IT/Ops, politely say you're focused on service intelligence but try to relate it back if possible.
+    5. Provide direct, factual answers. Use ACTUAL numbers provided in the Registry and Incident lists.`;
 
-${stats.connectedApps.length > 0 ? ` CONNECTED APPS:
-${stats.connectedApps.slice(0,5).map(a => `  • ${a.name}: ${a.status} (${a.category})`).join('\n')}` : ' No apps registered'}
-
-${stats.notificationsSent > 0 ? ` NOTIFICATIONS SENT: ${stats.notificationsSent} sent, ${stats.notificationsFailed} failed` : ''}
-
- RESPONSE RULES - FOLLOW EXACTLY:
-1. When asked "how many incidents", "incident count", or "how many total incidents" - ANSWER: "${stats.totalIncidents}" (the exact total number)
-2. When asked "how many incidents today" - ANSWER: "${stats.incidentsToday}"
-3. When asked "how many critical alerts" - ANSWER: "${stats.criticalAlerts}"
-4. When asked about "common issues" - reference the commonIssues array data
-5. When asked about "connected apps" or "all apps" - reference the connectedApps array
-6. If value is 0, say "0" explicitly - do NOT say "no" or "none" if data shows zeros
-7. If user asks about specific numbers, provide them with EXACT values from data above
-8. Be direct, factual, and use the actual numbers in your response`;
-
-    const userPrompt = `Question: ${question}
-${context ? `\nContext: ${context}` : ''}
-
-Answer the question directly using the platform data above. If the data clearly shows issues (like ${stats.criticalAlerts} critical alerts or ${stats.incidentsToday} incidents today), acknowledge them explicitly. If a value is 0, state "0" - don't be vague.`;
-
+    // Process messages to flatten for the simple callAI if needed, 
+    // or just pass as the "Context" if the caller handles it.
+    // For now, we return the prompts for the frontend to handle with callAI.
+    
     res.json({
       systemPrompt,
-      userPrompt,
+      userPrompt: `Question: ${question || messages[messages.length-1]?.content}\n\nAnswer based on the Service Registry and Incidents above. If a specific service like "Inventory API" has incidents, mention them. Give troubleshooting advice if relevant.`,
       stats,
       timestamp: new Date().toISOString()
     });

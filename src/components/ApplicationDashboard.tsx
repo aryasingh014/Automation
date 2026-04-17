@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
   Filter, 
@@ -24,7 +24,7 @@ import { useAppContext } from '@/src/context/AppContext';
 
 
 export default function ApplicationDashboard() {
-  const { portfolioApps, setPortfolioApps, createIncident, serviceNowSettings } = useAppContext();
+  const { portfolioApps, setPortfolioApps, createIncident, checkIncident, ticketingSettings } = useAppContext();
   const apps = portfolioApps;
   const [searchTerm, setSearchTerm] = useState('');
   const [showAllMetrics, setShowAllMetrics] = useState(false);
@@ -34,23 +34,37 @@ export default function ApplicationDashboard() {
   // Track which app IDs have already had incidents raised this session
   const firedIncidents = useRef<Set<string>>(new Set());
 
-  const criticalApps = apps.filter(a => a.status === 'Critical');
-  const warningApps  = apps.filter(a => a.status === 'Warning');
-  const healthyApps  = apps.filter(a => a.status === 'Healthy');
+  const criticalApps = useMemo(() => apps.filter(a => a.status === 'Critical'), [apps]);
+  const warningApps  = useMemo(() => apps.filter(a => a.status === 'Warning'), [apps]);
+  const healthyApps  = useMemo(() => apps.filter(a => a.status === 'Healthy'), [apps]);
 
   // ── Auto-Incident Generation ─────────────────────────────────────────────
+  const lastAutoIncidentToastRef = useRef<string>('');
+
   useEffect(() => {
-    if (!serviceNowSettings.autoIncidentEnabled) return;
+    if (!ticketingSettings.servicenow.autoIncidentEnabled) return;
 
     const unfired = criticalApps.filter(a => !firedIncidents.current.has(a.id));
     if (unfired.length === 0) return;
 
+    // Create a unique key for this set of critical apps
+    const criticalKey = unfired.map(a => a.id).sort().join(',');
+    if (lastAutoIncidentToastRef.current === criticalKey) return;
+    
+    lastAutoIncidentToastRef.current = criticalKey;
     toast.warning(`🚨 ${unfired.length} critical app(s) detected — raising ServiceNow incidents…`, { duration: 4000 });
 
     // Stagger so we don't flood ServiceNow simultaneously
     unfired.forEach((app, i) => {
       setTimeout(async () => {
         if (firedIncidents.current.has(app.id)) return;
+        
+        const activeIncident = await checkIncident(app.name);
+        if (activeIncident && activeIncident.exists) {
+          toast.info(`Active incident ${activeIncident.number} already exists for ${app.name}. Skipping.`);
+          return;
+        }
+        
         firedIncidents.current.add(app.id);
         try {
           const details =
@@ -72,7 +86,7 @@ export default function ApplicationDashboard() {
         }
       }, i * 2000); // 2s stagger per app
     });
-  }, [serviceNowSettings.autoIncidentEnabled, criticalApps]);
+  }, [ticketingSettings.servicenow.autoIncidentEnabled, criticalApps, checkIncident, createIncident]);
   // ─────────────────────────────────────────────────────────────────────────
 
 
@@ -88,7 +102,7 @@ export default function ApplicationDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight">Application Portfolio</h1>
-          {serviceNowSettings.autoIncidentEnabled && (
+          {ticketingSettings.servicenow.autoIncidentEnabled && (
             <span className="flex items-center gap-1.5 text-[10px] font-mono text-green-500">
               <Zap size={10} className="animate-pulse" />
               Auto-Incident Active — Critical apps automatically raise ServiceNow incidents
@@ -123,7 +137,7 @@ export default function ApplicationDashboard() {
           value={String(criticalApps.length)}
           color="text-red-500"
           icon={<AlertCircle size={14} />}
-          badge={serviceNowSettings.autoIncidentEnabled ? 'AUTO' : undefined}
+          badge={ticketingSettings.servicenow.autoIncidentEnabled ? 'AUTO' : undefined}
         />
         <StatBox label="Warning" value={String(warningApps.length)} color="text-amber-500" icon={<AlertTriangle size={14} />} />
         <StatBox label="Healthy" value={String(healthyApps.length)} color="text-green-500" icon={<CheckCircle size={14} />} />
@@ -268,7 +282,15 @@ export default function ApplicationDashboard() {
                   <p>Are you sure you want to restart <strong className="text-text-main">{activeModal.app.name}</strong>? This may cause a temporary disruption in service.</p>
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => setActiveModal(null)} className="px-3 py-1.5 rounded bg-bg-main border border-border-main hover:bg-border-main transition-colors">Cancel</button>
-                    <button onClick={() => {toast.success(`Successfully restarted ${activeModal.app.name}`); setActiveModal(null)}} className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-white transition-colors font-medium">Confirm Restart</button>
+                    <button onClick={async () => {
+                      try {
+                        await fetch(`/api/portfolio/restart/${activeModal.app.id}`, { method: 'POST' });
+                        toast.success(`Successfully restarted ${activeModal.app.name}. Status will be Healthy.`);
+                      } catch (err) {
+                        toast.error(`Failed to restart ${activeModal.app.name}`);
+                      }
+                      setActiveModal(null);
+                    }} className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-600 text-white transition-colors font-medium">Confirm Restart</button>
                   </div>
                 </div>
               )}
