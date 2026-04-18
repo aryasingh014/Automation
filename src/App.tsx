@@ -63,7 +63,8 @@ export default function App() {
     setTheme,
     alertRules,
     updateAlertRules,
-    ticketingSettings
+    ticketingSettings,
+    updateTicketingSettings
   } = useAppContext();
   const [activeDashboard, setActiveDashboard] = useState<DashboardType>('executive');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -273,7 +274,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-6">
-          <div 
+          <div
             onClick={() => setIsSearchOpen(true)}
             className="hidden md:flex items-center gap-2 bg-border-main px-3 py-1.5 rounded-md border border-border-hover cursor-pointer hover:bg-border-hover transition-colors"
           >
@@ -282,6 +283,38 @@ export default function App() {
             <span className="text-[10px] text-text-muted font-mono border border-border-hover px-1 rounded">⌘K</span>
           </div>
           <div className="flex items-center gap-3">
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className={(ticketingSettings?.servicenow?.autoIncidentEnabled ?? false) ? "text-blue-400" : "text-text-muted"} />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const servicenow = ticketingSettings?.servicenow;
+                    const currentValue = servicenow?.autoIncidentEnabled ?? false;
+                    const newEnabled = !currentValue;
+                    updateTicketingSettings({
+                      servicenow: { 
+                        instanceUrl: servicenow?.instanceUrl ?? '', 
+                        user: servicenow?.user ?? '', 
+                        password: servicenow?.password ?? '', 
+                        autoIncidentEnabled: newEnabled 
+                      }
+                    });
+                    toast.success(`Autonomous Engine ${newEnabled ? 'enabled' : 'disabled'}`);
+                  }}
+                  className={cn(
+                    "w-10 h-5 rounded-full p-0.5 transition-all duration-300 relative cursor-pointer",
+                    (ticketingSettings?.servicenow?.autoIncidentEnabled ?? false) ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+                  )}
+                  title={`${ticketingSettings?.servicenow?.autoIncidentEnabled ? 'Disable' : 'Enable'} Autonomous Engine`}
+                >
+                  <div className={cn(
+                    "w-3 h-3 bg-white rounded-full transition-transform duration-300 shadow-sm",
+                    (ticketingSettings?.servicenow?.autoIncidentEnabled ?? false) ? "translate-x-5" : "translate-x-0"
+                  )} />
+                </button>
+              </div>
+            )}
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-mono text-text-secondary uppercase">{user.name || user.email}</span>
               <span className="text-[10px] font-mono text-green-500 flex items-center gap-1">
