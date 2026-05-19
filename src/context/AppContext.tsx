@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 import { createServiceNowIncident, checkActiveIncident } from '../lib/servicenow';
 import { getAvailableModels, testAiConnection } from '../lib/ai';
-import { createTicket, checkExistingTicket, DEFAULT_TICKETING_SETTINGS, type TicketingSettings, type TicketingPlatform } from '../lib/ticketing';
+import { createTicket, checkExistingTicket, updateTicket, DEFAULT_TICKETING_SETTINGS, type TicketingSettings, type TicketingPlatform } from '../lib/ticketing';
 import { toast } from 'sonner';
 
 interface App {
@@ -65,12 +65,6 @@ export interface ServiceNowSettings {
   autoIncidentEnabled: boolean;
 }
 
-export interface TicketingSettings {
-  platform: TicketingPlatform;
-  servicenow: { instanceUrl: string; user: string; password: string; autoIncidentEnabled: boolean };
-  jira: { domain: string; email: string; apiToken: string; projectKey: string; issueType?: string };
-  zendesk: { subdomain: string; email: string; apiToken: string };
-}
 
 export interface AiSettings {
   provider: AiProvider;
@@ -82,6 +76,7 @@ export interface AiSettings {
   organizationId?: string;
   siteUrl?: string;
   siteName?: string;
+  providerConfigs?: Record<string, Partial<AiSettings>>;
 }
 
 export interface AlertRules {
@@ -175,6 +170,7 @@ interface AppContextType {
   closeAiModal: () => void;
   createIncident: (title: string, details: string, severity: string) => Promise<any>;
   checkIncident: (serviceName: string) => Promise<any>;
+  updateIncident: (ticketId: string, note: string) => Promise<boolean>;
   aiSettings: AiSettings;
   updateAiSettings: (settings: Partial<AiSettings>) => void;
   ticketingSettings: TicketingSettings;
@@ -217,7 +213,13 @@ export interface ILlmConfig {
   rateLimit: number;
 }
 
-const DEFAULT_AI_SETTINGS: AiSettings = { provider: 'ollama', apiKey: '', model: 'llama3', endpoint: 'http://localhost:11434' };
+const DEFAULT_AI_SETTINGS: AiSettings = { 
+  provider: 'ollama', 
+  apiKey: '', 
+  model: 'llama3', 
+  endpoint: 'http://localhost:11434',
+  providerConfigs: {}
+};
 const DEFAULT_ALERT_RULES: AlertRules = { cpuThreshold: 85, memoryThreshold: 85, latencyThreshold: 200, errorRateThreshold: 5 };
 const DEFAULT_API_SETTINGS: ApiSettings = {
   endpoints: [
@@ -283,11 +285,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (destroyed) return;
       try {
         // Use wss:// in production (HTTPS), ws:// in development
-        const isProd = import.meta.env.PROD;
-        const protocol = isProd ? 'wss' : 'ws';
-        const wsUrl = isProd 
-          ? `${protocol}://${window.location.host}/api/portfolio`
-          : `${protocol}://${window.location.hostname}:5000/api/portfolio`;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = import.meta.env.PROD 
+          ? `${protocol}//${window.location.host}/api/portfolio`
+          : `${protocol}//${window.location.hostname}:5000/api/portfolio`;
         ws = new WebSocket(wsUrl);
         ws.onerror = (e) => {
           console.warn('[Portfolio WS] Connection error - data may appear static:', e);
@@ -334,7 +335,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (theme === 'dark') document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); localStorage.setItem('observability_theme', theme); }, [theme]);
   const setTheme = useCallback((newTheme: 'light' | 'dark') => setThemeState(newTheme), []);
 
-  const [aiSettings, setAiSettings] = useState<AiSettings>(() => { try { const saved = localStorage.getItem('observability_ai_settings'); if (saved) { const parsed = JSON.parse(saved); if (!['ollama','openai','anthropic','azure','openrouter','groq'].includes(parsed.provider)) { parsed.provider = 'ollama'; parsed.model = 'llama3'; } return parsed; } } catch { return DEFAULT_AI_SETTINGS; } return DEFAULT_AI_SETTINGS; });
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => { 
+    try { 
+      const saved = localStorage.getItem('observability_ai_settings'); 
+      if (saved) { 
+        const parsed = JSON.parse(saved); 
+        if (!['ollama','openai','anthropic','azure','openrouter','groq'].includes(parsed.provider)) { 
+          parsed.provider = 'ollama'; 
+          parsed.model = 'llama3'; 
+        }
+        if (!parsed.providerConfigs) parsed.providerConfigs = {};
+        // Initialize current provider config if not present
+        if (!parsed.providerConfigs[parsed.provider]) {
+          parsed.providerConfigs[parsed.provider] = { ...parsed };
+          delete parsed.providerConfigs[parsed.provider].providerConfigs;
+        }
+        return parsed; 
+      } 
+    } catch { 
+      return DEFAULT_AI_SETTINGS; 
+    } 
+    return DEFAULT_AI_SETTINGS; 
+  });
   const [alertRules, setAlertRules] = useState<AlertRules>(() => { try { const saved = localStorage.getItem('observability_alert_rules'); if (saved) return JSON.parse(saved); } catch { return DEFAULT_ALERT_RULES; } return DEFAULT_ALERT_RULES; });
   const [environment, setEnvironmentState] = useState<Environment>(() => { const saved = localStorage.getItem('observability_environment'); if (saved === 'development' || saved === 'staging' || saved === 'production') return saved; return 'development'; });
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -425,7 +447,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { localStorage.setItem('observability_ticketing_settings', JSON.stringify(ticketingSettings)); }, [ticketingSettings]);
   useEffect(() => { localStorage.setItem('observability_api_settings', JSON.stringify(apiSettings)); }, [apiSettings]);
 
-  const updateAiSettings = useCallback((newSettings: Partial<AiSettings>) => setAiSettings(prev => { if (newSettings.provider && newSettings.provider !== prev.provider) setAvailableModels([]); return { ...prev, ...newSettings }; }), []);
+  const updateAiSettings = useCallback((newSettings: Partial<AiSettings>) => setAiSettings(prev => { 
+    const currentProvider = prev.provider;
+    const providerConfigs = { ...(prev.providerConfigs || {}) };
+    
+    if (!newSettings.provider || newSettings.provider === currentProvider) {
+      // Updating current provider
+      const updatedConfig = { ...providerConfigs[currentProvider], ...newSettings };
+      providerConfigs[currentProvider] = updatedConfig;
+      return { ...prev, ...newSettings, providerConfigs };
+    }
+    
+    // Switching provider
+    setAvailableModels([]);
+    const newProvider = newSettings.provider;
+    
+    // Save current state to configs just in case
+    providerConfigs[currentProvider] = {
+      apiKey: prev.apiKey,
+      model: prev.model,
+      endpoint: prev.endpoint,
+      displayName: prev.displayName,
+      apiVersion: prev.apiVersion,
+      organizationId: prev.organizationId,
+      siteUrl: prev.siteUrl,
+      siteName: prev.siteName,
+    };
+
+    const savedConfig = providerConfigs[newProvider] || {};
+    
+    return {
+      ...prev,
+      apiKey: '',
+      model: newProvider === 'ollama' ? 'llama3' : 'default',
+      endpoint: newProvider === 'ollama' ? 'http://localhost:11434' : '',
+      displayName: '',
+      apiVersion: '',
+      organizationId: '',
+      siteUrl: '',
+      siteName: '',
+      ...savedConfig,
+      provider: newProvider,
+      providerConfigs
+    };
+  }), []);
   const updateAlertRules = useCallback((newRules: Partial<AlertRules>) => setAlertRules(prev => ({ ...prev, ...newRules })), []);
   const updateTicketingSettings = useCallback((newSettings: Partial<TicketingSettings>) => setTicketingSettings(prev => ({ ...prev, ...newSettings })), []);
   const updateApiSettings = useCallback((newSettings: Partial<ApiSettings>) => setApiSettings(prev => ({ ...prev, ...newSettings })), []);
@@ -463,6 +528,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, [ticketingSettings]);
   const checkIncident = useCallback(async (serviceName: string) => await checkExistingTicket(serviceName, ticketingSettings), [ticketingSettings]);
+  const updateIncident = useCallback(async (ticketId: string, note: string) => await updateTicket(ticketId, note, ticketingSettings), [ticketingSettings]);
 
   const fetchLlmUsage = useCallback(async () => {
     try {
@@ -528,7 +594,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{ 
       onboardedApps, addOnboardedApp, portfolioApps, setPortfolioApps, 
       isAiModalOpen: aiModal.isOpen, aiContent: aiModal.content, openAiModal, closeAiModal, 
-      createIncident, checkIncident, 
+      createIncident, checkIncident, updateIncident,
       ticketingSettings, updateTicketingSettings, testTicketingConnection,
       aiSettings, updateAiSettings, 
       availableModels, fetchModels, testConnection, testServiceNowConnection, 

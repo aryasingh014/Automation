@@ -14,8 +14,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { cn } from '@/src/lib/utils';
-import { useAuth } from '@/src/context/AuthContext';
+import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
+import { useAppContext } from '../context/AppContext';
 
 interface OnboardingRequest {
   _id: string;
@@ -45,6 +46,7 @@ const checklistItems = [
 
 export default function OnboardingTracker() {
   const { token } = useAuth();
+  const { portfolioApps } = useAppContext();
   const [onboardedApps, setOnboardedApps] = useState<OnboardingRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -57,24 +59,23 @@ export default function OnboardingTracker() {
   });
 
   React.useEffect(() => {
-    fetchApprovedApps();
-  }, []);
-
-  const fetchApprovedApps = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/onboarding/requests?status=approved', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setOnboardedApps(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch apps:', err);
+    // Sync onboarding tracker with the central portfolioApps state to ensure data consistency
+    if (portfolioApps && portfolioApps.length > 0) {
+      const mappedApps = portfolioApps.map(app => ({
+        _id: app.id,
+        appName: app.name,
+        tier: app.tier,
+        owner: app.owner || 'admin@enterprise.com',
+        environment: 'Production',
+        status: 'approved' as const,
+        requestedAt: new Date().toISOString()
+      }));
+      setOnboardedApps(mappedApps);
+    } else {
+      setOnboardedApps([]);
     }
     setLoading(false);
-  };
+  }, [portfolioApps]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

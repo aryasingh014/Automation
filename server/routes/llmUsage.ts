@@ -127,7 +127,7 @@ router.post('/pricing', protect, adminOnly, async (req, res) => {
     const config = await LlmConfig.findOneAndUpdate(
       { provider, model },
       { inputCost, outputCost, tokenLimit, rateLimit },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     
     res.json(config);

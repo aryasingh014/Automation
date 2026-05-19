@@ -46,6 +46,50 @@ import PlatformChatbot from './components/PlatformChatbot';
 
 type DashboardType = 'executive' | 'application' | 'infrastructure' | 'noc' | 'onboarding' | 'chatbot';
 
+const FormattedAnalysis = ({ text }: { text: string }) => {
+  if (!text) return null;
+  
+  let lines = text.split('\n');
+  // If the LLM returned a single line with ' * ' separators instead of newlines
+  if (lines.length === 1 && text.includes(' * ')) {
+    lines = text.split(/(?=\s\*\s)/).map(s => s.trim());
+  }
+
+  return (
+    <div className="space-y-2">
+      {lines.map((line, i) => {
+        if (!line.trim()) return null;
+        
+        const isList = line.trim().match(/^[\*\-\+]\s/);
+        const cleanLine = line.replace(/^[\*\-\+]\s+/, '');
+        
+        const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+        const formattedContent = parts.map((part, j) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={j} className="font-semibold text-text-main">{part.slice(2, -2)}</strong>;
+          }
+          return <span key={j}>{part}</span>;
+        });
+
+        if (isList) {
+          return (
+            <div key={i} className="flex gap-3 items-start ml-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
+              <div className="text-sm text-text-main leading-relaxed">{formattedContent}</div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={i} className="text-sm text-text-main leading-relaxed mb-1">
+            {formattedContent}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function App() {
   const { user, isLoading, logout, token } = useAuth();
   const { isAdmin, canManageUsers } = usePermissions();
@@ -143,7 +187,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg-main text-text-main font-sans selection:bg-inverse-bg selection:text-inverse-text">
-      <Toaster theme="dark" position="top-right" richColors />
+      <Toaster theme="dark" position="bottom-right" richColors />
       
       {/* AI Insight Modal */}
       <AnimatePresence>
@@ -160,9 +204,9 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-bg-surface border border-blue-500/30 rounded-2xl shadow-2xl shadow-blue-500/10 overflow-hidden"
+              className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-bg-surface border border-blue-500/30 rounded-2xl shadow-2xl shadow-blue-500/10 overflow-hidden"
             >
-              <div className="p-6 border-b border-border-main flex items-center justify-between bg-gradient-to-r from-blue-500/10 to-transparent">
+              <div className="p-6 border-b border-border-main flex items-center justify-between bg-gradient-to-r from-blue-500/10 to-transparent flex-shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-500">
                     <Sparkles size={20} />
@@ -177,14 +221,14 @@ export default function App() {
                 </button>
               </div>
               
-              <div className="p-8 space-y-8">
+              <div className="p-8 space-y-8 overflow-y-auto">
                 <div className="space-y-3">
                   <h3 className="text-[10px] font-mono text-text-muted uppercase tracking-widest flex items-center gap-2">
                     <Info size={12} /> Analysis Report
                   </h3>
-                  <p className="text-sm leading-relaxed text-text-main">
-                    {aiContent.analysis}
-                  </p>
+                  <div className="bg-bg-main/50 p-4 rounded-xl border border-border-main/50">
+                    <FormattedAnalysis text={aiContent.analysis} />
+                  </div>
                 </div>
 
                 <div className="space-y-4">

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useAppContext } from './AppContext';
+import { toast } from 'sonner';
 
 interface UserData {
   _id: string;
@@ -23,7 +23,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
-  const { addNotification } = useAppContext();
 
   const fetchUserNotifications = async (authToken: string) => {
     try {
@@ -34,10 +33,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const notifications = await res.json();
         if (notifications && notifications.length > 0) {
           notifications.forEach((n: any) => {
-            addNotification({
-              type: n.type === 'email' ? 'info' : n.type,
-              title: n.subject || 'Notification',
-              message: n.message || ''
+            toast(n.subject || 'Notification', {
+              description: n.message || ''
             });
           });
         }

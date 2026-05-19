@@ -63,7 +63,7 @@ export interface TicketingSettings {
     email: string;
     apiToken: string;
     projectKey: string;
-    issueType: string;
+    issueType?: string;
   };
   zendesk: {
     subdomain: string;
@@ -337,7 +337,7 @@ async function createZendeskTicket(
 export async function checkExistingTicket(
   serviceName: string,
   settings: TicketingSettings
-): Promise<{ exists: boolean; number?: string; url?: string } | null> {
+): Promise<{ exists: boolean; number?: string; url?: string; ticketId?: string } | null> {
   switch (settings.platform) {
     case 'servicenow':
       return checkServiceNowIncident(serviceName, settings.servicenow);
@@ -353,7 +353,7 @@ export async function checkExistingTicket(
 async function checkServiceNowIncident(
   serviceName: string,
   credentials: TicketingSettings['servicenow']
-): Promise<{ exists: boolean; number?: string; url?: string } | null> {
+): Promise<{ exists: boolean; number?: string; url?: string; ticketId?: string } | null> {
   if (!credentials.instanceUrl || !credentials.user || !credentials.password) {
     return null;
   }
@@ -387,11 +387,130 @@ async function checkServiceNowIncident(
       return {
         exists: true,
         number: data.result[0].number,
+        ticketId: data.result[0].sys_id,
         url: `${cleanUrl}/nav_to.do?uri=incident.do?sys_id=${data.result[0].sys_id}`,
       };
     }
     return null;
   } catch {
     return null;
+  }
+}
+
+async function checkZendeskTicket(
+  serviceName: string,
+  credentials: TicketingSettings['zendesk']
+): Promise<{ exists: boolean; number?: string; url?: string; ticketId?: string } | null> {
+  if (!credentials.subdomain || !credentials.email || !credentials.apiToken) {
+    return null;
+  }
+
+  const cleanSubdomain = sanitizeDomain(credentials.subdomain);
+  const auth = btoa(`${credentials.email}/token:${credentials.apiToken}`);
+
+  try {
+    const query = encodeURIComponent(`type:ticket status<solved "${serviceName}"`);
+    const url = `https://${cleanSubdomain}.zendesk.com/api/v2/search.json?query=${query}`;
+    
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' }
+      })
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data.results && data.results.length > 0) {
+      const ticket = data.results[0];
+      return {
+        exists: true,
+        number: `#${ticket.id}`,
+        ticketId: String(ticket.id),
+        url: `https://${cleanSubdomain}.zendesk.com/agent/tickets/${ticket.id}`
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateTicket(
+  ticketId: string,
+  note: string,
+  settings: TicketingSettings
+): Promise<boolean> {
+  switch (settings.platform) {
+    case 'servicenow':
+      return updateServiceNowTicket(ticketId, note, settings.servicenow);
+    case 'zendesk':
+      return updateZendeskTicket(ticketId, note, settings.zendesk);
+    case 'jira':
+      // Jira implementation (placeholder)
+      return false;
+    default:
+      return false;
+  }
+}
+
+async function updateServiceNowTicket(
+  sys_id: string,
+  note: string,
+  credentials: TicketingSettings['servicenow']
+): Promise<boolean> {
+  if (!credentials.instanceUrl || !credentials.user || !credentials.password) return false;
+  const cleanUrl = sanitizeUrl(credentials.instanceUrl);
+  const auth = btoa(`${credentials.user}:${credentials.password}`);
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: `${cleanUrl}/api/now/table/incident/${sys_id}`,
+        method: 'PUT',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: { work_notes: note },
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function updateZendeskTicket(
+  ticketId: string,
+  note: string,
+  credentials: TicketingSettings['zendesk']
+): Promise<boolean> {
+  if (!credentials.subdomain || !credentials.email || !credentials.apiToken) return false;
+  const cleanSubdomain = sanitizeDomain(credentials.subdomain);
+  const auth = btoa(`${credentials.email}/token:${credentials.apiToken}`);
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: `https://${cleanSubdomain}.zendesk.com/api/v2/tickets/${ticketId}.json`,
+        method: 'PUT',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: { ticket: { comment: { body: note } } },
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
 }

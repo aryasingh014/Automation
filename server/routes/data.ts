@@ -72,7 +72,7 @@ router.get('/alerts', async (req: AuthRequest, res) => {
 
 router.patch('/alerts/:id', async (req: AuthRequest, res) => {
   try {
-    const alert = await Alert.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const alert = await Alert.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     await AuditLog.create({
       userId: req.user?._id,
       userEmail: req.user?.email,
@@ -153,7 +153,7 @@ router.put('/dashboards/:id', async (req: AuthRequest, res) => {
     const dashboard = await CustomDashboard.findOneAndUpdate(
       { _id: req.params.id, userId: req.user?._id },
       { ...req.body, updatedAt: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
     res.json(dashboard);
   } catch (error: any) {

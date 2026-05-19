@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ILlmConfig extends Document {
+export interface ILlmConfig {
   provider: string;
   model: string;
   inputCost: number;

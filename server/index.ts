@@ -26,6 +26,14 @@ import {
 
 dotenv.config();
 
+// Validate critical environment variables
+const REQUIRED_ENV_VARS = ['JWT_SECRET', 'MONGO_URI'];
+REQUIRED_ENV_VARS.forEach(envVar => {
+  if (!process.env[envVar]) {
+    console.warn(`[API] WARNING: Missing required environment variable: ${envVar}`);
+  }
+});
+
 const app = express();
 
 // Connect to MongoDB
@@ -34,6 +42,7 @@ connectDB().then(() => {
   seedDatabase();
 }).catch((err) => {
   console.error('[API] Database connection failed - running in limited mode:', err.message);
+  (global as any).dbError = err.message;
 });
 
 // Middleware
@@ -90,7 +99,12 @@ app.get('/api/incidents', async (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Observability.OS API is running' });
+  res.json({ 
+    status: 'ok', 
+    message: 'Observability.OS API is running',
+    database: (global as any).dbError ? 'disconnected' : 'connected',
+    dbError: (global as any).dbError || null
+  });
 });
 
 // ── Ticketing Proxies ──────────────────────────────────────────────────────

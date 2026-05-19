@@ -402,24 +402,49 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                       Add a new LLM provider by either selecting from one of the default providers or by specifying your own custom LLM provider.
                     </p>
                     <div className="space-y-3">
-                      {aiProviders.map((provider) => (
-                        <div 
-                          key={provider.id} 
-                          className="flex items-center justify-between p-4 bg-bg-surface border border-border-main rounded-xl shadow-sm hover:border-blue-500/30 hover:shadow-md transition-all"
-                          style={{ backgroundColor: theme === 'light' ? '#ffffff' : undefined }}
-                        >
-                          <span className="text-lg font-medium text-text-main">{provider.label}</span>
-                          <button 
-                            onClick={() => {
-                              updateAiSettings({ provider: provider.id });
-                              setSelectedProviderSetup(provider.id);
-                            }}
-                            className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-blue-700 transition-colors"
+                      {aiProviders.map((provider) => {
+                        const isActive = aiSettings.provider === provider.id;
+                        const hasConfig = aiSettings.providerConfigs?.[provider.id]?.apiKey || 
+                                         (provider.id === 'ollama' && aiSettings.providerConfigs?.[provider.id]?.endpoint);
+                        
+                        return (
+                          <div 
+                            key={provider.id} 
+                            className={cn(
+                              "flex items-center justify-between p-4 bg-bg-surface border rounded-xl shadow-sm hover:shadow-md transition-all",
+                              isActive ? "border-blue-500 bg-blue-500/5 shadow-blue-500/10" : "border-border-main hover:border-blue-500/30"
+                            )}
+                            style={{ backgroundColor: (theme === 'light' && !isActive) ? '#ffffff' : undefined }}
                           >
-                            Set up
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-medium text-text-main">{provider.label}</span>
+                              {isActive && (
+                                <span className="px-2.5 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider flex items-center gap-1">
+                                  <CheckCircle size={10} /> Active
+                                </span>
+                              )}
+                              {!isActive && hasConfig && (
+                                <span className="text-[10px] text-text-muted border border-border-main px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Cloud size={10} /> Configured
+                                </span>
+                              )}
+                            </div>
+                            <button 
+                              onClick={() => {
+                                updateAiSettings({ provider: provider.id });
+                                setSelectedProviderSetup(provider.id);
+                              }}
+                              className={cn(
+                                "px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors",
+                                isActive ? "bg-inverse-bg text-inverse-text hover:opacity-90" : 
+                                (hasConfig ? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50" : "bg-blue-600 text-white hover:bg-blue-700")
+                              )}
+                            >
+                              {isActive ? 'Configure' : (hasConfig ? 'Connect' : 'Set up')}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (

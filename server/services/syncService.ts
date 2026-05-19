@@ -87,7 +87,7 @@ export async function syncIncidentsFromServiceNow(): Promise<SyncResult> {
         const updated = await Incident.findOneAndUpdate(
           { number: inc.number },
           { ...incidentData, updatedAt: new Date() },
-          { new: true }
+          { returnDocument: 'after' }
         );
         if (updated) result.incidentsUpdated++;
       } else {

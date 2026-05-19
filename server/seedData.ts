@@ -30,7 +30,7 @@ export async function seedDatabase() {
       await AppRegistry.findOneAndUpdate(
         { appId: app.appId },
         app,
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     }
     console.log(`[Seed] Upserted ${defaultApps.length} apps into AppRegistry`);

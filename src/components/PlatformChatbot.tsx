@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Bot, Sparkles, Zap, AlertTriangle, Activity, HelpCircle, Maximize2, Minimize2, ArrowLeft, Smartphone, Mail, Server, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '@/src/lib/utils';
+import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';

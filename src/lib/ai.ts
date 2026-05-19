@@ -1,4 +1,5 @@
 import { AiSettings, DEFAULT_LLM_PRICING } from "../context/AppContext";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const DEFAULT_SYSTEM_PROMPT = `You are an Enterprise IT Operations Assistant for an Observability Platform.
 
@@ -258,6 +259,7 @@ async function callGroq(prompt: string, settings: AiSettings) {
 }
 
 async function callGemini(prompt: string, settings: AiSettings) {
+  if (!settings.apiKey) throw new Error("Gemini API key is missing. Please configure it in Settings.");
   const genAI = new GoogleGenerativeAI(settings.apiKey);
   const modelName = settings.model || "gemini-1.5-flash";
   const model = genAI.getGenerativeModel({ 

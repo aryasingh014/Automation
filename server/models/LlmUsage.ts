@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ILlmUsage extends Document {
+export interface ILlmUsage {
   userId: string;
   userName: string;
   email: string;

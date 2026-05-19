@@ -18,8 +18,8 @@ import {
   Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/src/lib/utils';
-import { useAppContext } from '@/src/context/AppContext';
+import { cn } from '../lib/utils';
+import { useAppContext } from '../context/AppContext';
 
 
 

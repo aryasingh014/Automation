@@ -12,11 +12,11 @@ import {
   CheckCircle2,
   XCircle
 } from 'lucide-react';
-import { cn } from '@/src/lib/utils';
+import { cn } from '../lib/utils';
 import { toast } from 'sonner';
-import { summarizeLogs } from '@/src/lib/ai';
-import { useAppContext } from '@/src/context/AppContext';
-import { useTelemetry } from '@/src/hooks/useTelemetry';
+import { summarizeLogs, analyzeIncident } from '../lib/ai';
+import { useAppContext } from '../context/AppContext';
+import { useTelemetry } from '../hooks/useTelemetry';
 
 const initialAlerts = [
   { id: 'ALR-4402', severity: 'Critical', service: 'Warehouse Service', message: 'Latency spike > 980ms detected in US-East-1', time: '2m ago', status: 'Active' },
@@ -48,7 +48,7 @@ export default function NOCDashboard() {
   const [liveIncidents, setLiveIncidents] = useState<any[]>([]);
   const [isLoadingIncidents, setIsLoadingIncidents] = useState(true);
   const telemetry = useTelemetry(10000);
-  const { openAiModal, aiSettings, ticketingSettings, createIncident, checkIncident, portfolioApps } = useAppContext();
+  const { openAiModal, aiSettings, ticketingSettings, createIncident, checkIncident, updateIncident, portfolioApps } = useAppContext();
 
   // Alerts are now managed by the backend or explicitly triggered to prevent feedback loops
   useEffect(() => {
@@ -91,20 +91,32 @@ export default function NOCDashboard() {
     try {
       const activeIncident = await checkIncident(alert.service);
       
+      const now = new Date();
+      const mockLogs = `
+        [INFO] ${new Date(now.getTime() - 5000).toLocaleTimeString()} Request received by ${alert.service}
+        [WARN] ${new Date(now.getTime() - 3000).toLocaleTimeString()} Anomalous activity detected in service
+        [ERROR] ${new Date(now.getTime() - 1000).toLocaleTimeString()} Primary issue: ${alert.message}
+        [CRITICAL] ${now.toLocaleTimeString()} Autonomous trigger for ${alert.id}
+      `;
+      const analysis = await summarizeLogs(alert.service, mockLogs, aiSettings);
+
       if (activeIncident && activeIncident.exists) {
-        toast.info(`Active incident ${activeIncident.number} already exists for ${alert.service}. Deduplicating alert...`, {
+        toast.info(`Active incident ${activeIncident.number} exists. Analyzing deduplicated alert and updating ticket...`, {
           duration: 5000,
         });
+        
+        if (activeIncident.ticketId) {
+          const note = `[Autonomous Engine Update]\nRepeated critical anomaly detected for ${alert.service}.\nAlert Message: ${alert.message}\n\nAI Analysis of latest occurrence:\n${analysis}`;
+          const success = await updateIncident(activeIncident.ticketId, note);
+          if (success) {
+            toast.success(`Successfully added AI analysis note to incident ${activeIncident.number}`);
+          } else {
+            toast.error(`Failed to update incident ${activeIncident.number}`);
+          }
+        }
         return;
       }
 
-      const mockLogs = `
-        [INFO] ${new Date().toLocaleTimeString()} Request received for /api/v1/data
-        [ERROR] ${new Date().toLocaleTimeString()} Timeout connection to DB_CLUSTER_01
-        [WARN] ${new Date().toLocaleTimeString()} Retrying connection (1/3)...
-        [CRITICAL] ${new Date().toLocaleTimeString()} Autonomous trigger for ${alert.id}
-      `;
-      const analysis = await summarizeLogs(alert.service, mockLogs, aiSettings);
       const result = await createIncident(alert.id + " (Autonomous) on " + alert.service, analysis, 'Critical');
       toast.success(`Autonomous Incident ${result.number} created successfully!`, {
         description: "AIOps engine resolved this alert autonomously."
@@ -113,7 +125,7 @@ export default function NOCDashboard() {
     } catch (error) {
       console.error("Autonomous Action Failed:", error);
     }
-  }, [aiSettings, checkIncident, createIncident, fetchIncidents]);
+  }, [aiSettings, checkIncident, createIncident, updateIncident, fetchIncidents]);
 
   // Store latest trigger for cleanup
   useEffect(() => {
@@ -154,15 +166,20 @@ export default function NOCDashboard() {
   const handleViewLogs = async (alert: any) => {
     toast.promise(
       async () => {
+        const now = new Date();
+        const t1 = new Date(now.getTime() - 5000).toLocaleTimeString();
+        const t2 = new Date(now.getTime() - 4000).toLocaleTimeString();
+        const t3 = new Date(now.getTime() - 2000).toLocaleTimeString();
+        const t4 = now.toLocaleTimeString();
+
         const mockLogs = `
-          [INFO] 12:00:01 Request received for /api/v1/data
-          [ERROR] 12:00:02 Timeout connection to DB_CLUSTER_01
-          [WARN] 12:00:03 Retrying connection (1/3)...
-          [ERROR] 12:00:05 Max retries exceeded for ${alert.service}
-          [CRITICAL] 12:00:06 Circuit breaker opened for downstream dependency
+          [INFO] ${t1} Request received by ${alert.service}
+          [WARN] ${t2} Performance metric deviation detected
+          [ERROR] ${t3} Primary issue: ${alert.message}
+          [CRITICAL] ${t4} Alert ${alert.id} triggered. System health affected.
         `;
-        const summary = await summarizeLogs(alert.service, mockLogs, aiSettings);
-        openAiModal(alert.id + " Log Analysis", summary, ["Restart service", "Check DB credentials", "Increase timeout"], alert.severity);
+        const result = await analyzeIncident(alert.service, mockLogs, aiSettings);
+        openAiModal(alert.id + " Log Analysis", result.analysis, result.recommendations, result.severity);
       },
       {
         loading: `Hydrating logs and running AI analysis...`,

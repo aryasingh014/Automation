@@ -22,8 +22,8 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { cn } from '@/src/lib/utils';
-import { useAppContext } from '@/src/context/AppContext';
+import { cn } from '../lib/utils';
+import { useAppContext } from '../context/AppContext';
 import ServiceTopology from './ServiceTopology';
 
 const initialResourceUsage = [

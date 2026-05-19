@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { cn } from '@/src/lib/utils';
+import { cn } from '../lib/utils';
 
 const integrationCategories = [
   { id: 'all', label: 'All' },
